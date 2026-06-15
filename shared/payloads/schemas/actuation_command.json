@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ActuationCommand",
+  "type": "object",
+  "properties": {
+    "command_id": { "type": "string" },
+    "target_node": { "type": "integer" },
+    "actuator_type": { "type": "string", "enum": ["VALVE", "PUMP", "FERTIGATOR"] },
+    "action": { "type": "string", "enum": ["OPEN", "CLOSE", "SET"] },
+    "value": { "type": "number", "description": "Optional value for SET actions" },
+    "duration_sec": { "type": "integer", "description": "Optional duration for the action" }
+  },
+  "required": ["command_id", "target_node", "actuator_type", "action"]
+}

@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SensorReading",
+  "type": "object",
+  "properties": {
+    "node_id": { "type": "integer" },
+    "timestamp": { "type": "integer", "description": "Unix epoch seconds" },
+    "sequence_number": { "type": "integer" },
+    "temperature": { "type": "number", "description": "Temperature in Celsius" },
+    "humidity": { "type": "number", "description": "Relative humidity percentage" },
+    "soil_moisture": { "type": "number", "description": "Volumetric water content percentage" },
+    "ec": { "type": "number", "description": "Electrical conductivity in uS/cm" },
+    "ph": { "type": "number", "description": "Soil pH" },
+    "rainfall": { "type": "number", "description": "Rainfall in mm" },
+    "sensor_mask": { "type": "integer", "description": "Bit flags for channel status" },
+    "battery_pct": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "tx_reason": { "type": "integer", "description": "0=scheduled, 1=escalation, 2=retry" },
+    "rssi_last_rx": { "type": "integer", "description": "dBm" }
+  },
+  "required": [
+    "node_id",
+    "timestamp",
+    "sequence_number",
+    "temperature",
+    "humidity",
+    "soil_moisture",
+    "ec",
+    "ph",
+    "rainfall",
+    "sensor_mask",
+    "battery_pct",
+    "tx_reason",
+    "rssi_last_rx"
+  ]
+}
