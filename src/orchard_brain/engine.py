@@ -2,8 +2,8 @@
 intelligence pipeline.
 
 This is the single entry point for the orchard_brain package.  Callers
-(e.g. RulesEngine, future REST endpoint, or a monitoring loop) should
-import and use only this class.
+(e.g. an ingestion adapter, a future REST endpoint, or a monitoring loop)
+should import and use only this class.
 
 Usage — simple (existing contract, unchanged)
 ─────────────────────────────────────────────
@@ -37,15 +37,15 @@ Usage — full intelligence pipeline (Phase 7 integration)
 
 Compatibility note
 ──────────────────
-``OrchardBrain`` does NOT import ``SensorReading`` at module level so that
-the orchard_brain package remains importable in isolation (e.g. in unit tests
-that do not have the full src package on the path).  The ``evaluate`` method
-accepts any object with ``.temperature``, ``.humidity``, ``.ec``, ``.ph``
-attributes, making it forward-compatible with future sensor models.
+``OrchardBrain`` accepts a *duck-typed* sensor reading: any object exposing
+``.temperature``, ``.humidity``, ``.ec`` and ``.ph`` as floats.  No concrete
+reading class is imported, so the package stays importable in isolation and
+remains forward-compatible with future sensor models (e.g. an ESP32/LoRa
+ingestion adapter).
 """
 from __future__ import annotations
 
-from typing import Any, Optional, TypedDict
+from typing import Any, TypedDict
 
 from .health import HealthAssessment, HealthResult
 from .orchard_memory import OrchardMemory, SensorSnapshot
@@ -80,12 +80,12 @@ class OrchardBrain:
         self._rec = RecommendationEngine()
         self._orchestrator = OrchardOrchestrator()
         self._report_gen = OrchardReport()
-        self._memory: Optional[OrchardMemory] = OrchardMemory() if enable_memory else None
+        self._memory: OrchardMemory | None = OrchardMemory() if enable_memory else None
 
     # ──────────────────────────────────────────────── original API (unchanged)
 
     def evaluate(self, reading: Any) -> BrainResult:
-        """Evaluate a ``SensorReading`` (or any compatible object).
+        """Evaluate a sensor reading (any object with the required attributes).
 
         Args:
             reading: Object exposing ``.temperature``, ``.humidity``,
@@ -111,7 +111,7 @@ class OrchardBrain:
         """Evaluate raw sensor values directly.
 
         Useful for testing, CLI tools, or callers that do not construct
-        a ``SensorReading`` object.
+        a sensor reading object.
         """
         health: HealthResult = self._health.assess(temperature, humidity, ec, ph)
         risks: list[Risk] = self._risk.assess(temperature, humidity, ec, ph)
@@ -134,7 +134,8 @@ class OrchardBrain:
     def evaluate_orchestrated(
         self,
         reading: Any,
-        memory: Optional[OrchardMemory] = None,
+        memory: OrchardMemory | None = None,
+        soil_moisture: float | None = None,
     ) -> OrchestratorResult:
         """Run the full multi-agent intelligence pipeline.
 
@@ -147,18 +148,22 @@ class OrchardBrain:
             memory  : Optional external OrchardMemory instance.  If None, uses
                       the instance's internal memory (if enable_memory=True) or
                       creates a single-shot memory for this call.
+            soil_moisture : Optional measured root-zone VWC (%).  When omitted,
+                      air humidity is used as a proxy (original behaviour) and
+                      the snapshot is flagged via ``soil_moisture_is_proxy``.
 
         Returns:
             ``OrchestratorResult`` — structured output of all agents and modules.
         """
-        snapshot = SensorSnapshot.from_reading(reading)
+        snapshot = SensorSnapshot.from_reading(reading, soil_moisture=soil_moisture)
         mem = memory or self._memory
         return self._orchestrator.run(snapshot, memory=mem)
 
     def evaluate_full(
         self,
         reading: Any,
-        memory: Optional[OrchardMemory] = None,
+        memory: OrchardMemory | None = None,
+        soil_moisture: float | None = None,
     ) -> str:
         """Run the full pipeline and return a human-readable report string.
 
@@ -174,12 +179,14 @@ class OrchardBrain:
         Args:
             reading : Object with .temperature, .humidity, .ec, .ph attributes.
             memory  : Optional external ``OrchardMemory``.
+            soil_moisture : Optional measured root-zone VWC (%).  When omitted,
+                      air humidity is used as a proxy (original behaviour).
 
         Returns:
             Multi-line report string — suitable for logging, email alerts, or
             dashboard display.
         """
-        snapshot = SensorSnapshot.from_reading(reading)
+        snapshot = SensorSnapshot.from_reading(reading, soil_moisture=soil_moisture)
         mem = memory or self._memory
 
         # Run health assessment for the report header
@@ -196,17 +203,21 @@ class OrchardBrain:
         humidity: float,
         ec: float,
         ph: float,
-        memory: Optional[OrchardMemory] = None,
+        memory: OrchardMemory | None = None,
+        soil_moisture: float | None = None,
     ) -> str:
         """Full pipeline accepting raw floats — same as evaluate_full() but
-        without a SensorReading object (useful for testing)."""
+        without a sensor reading object (useful for testing)."""
 
         class _Reading:
-            pass
+            temperature: float
+            humidity: float
+            ec: float
+            ph: float
 
         r = _Reading()
         r.temperature = temperature
         r.humidity = humidity
         r.ec = ec
         r.ph = ph
-        return self.evaluate_full(r, memory=memory)
+        return self.evaluate_full(r, memory=memory, soil_moisture=soil_moisture)

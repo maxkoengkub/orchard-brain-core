@@ -6,8 +6,8 @@ structured risks and recommendations with confidence scores.
 """
 from __future__ import annotations
 
-from ._agent_base import AgentAssessment
-from ._thresholds import HUMIDITY, PHYTOPHTHORA
+from ._agent_base import AgentAssessment, RecommendationDict, RiskDict
+from ._thresholds import PHYTOPHTHORA
 from .orchard_memory import SensorSnapshot, TrendResult
 
 
@@ -25,8 +25,8 @@ class DiseaseAgent:
         T = snapshot.temperature
         sm = snapshot.soil_moisture
 
-        risks: list[dict] = []
-        recs: list[dict] = []
+        risks: list[RiskDict] = []
+        recs: list[RecommendationDict] = []
 
         temp_in_range = PHYTOPHTHORA.temp_favour_low <= T <= PHYTOPHTHORA.temp_favour_high
         wet_period = any(t.trend == "excessive_wet_period" for t in trends)
@@ -94,7 +94,7 @@ class DiseaseAgent:
         )
 
 
-def _status(risks: list[dict]) -> str:
+def _status(risks: list[RiskDict]) -> str:
     if any(r["severity"] == "critical" for r in risks):
         return "critical"
     if any(r["severity"] == "warning" for r in risks):

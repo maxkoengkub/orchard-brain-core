@@ -36,9 +36,13 @@ class _TemperatureThresholds:
 
 
 @dataclass(frozen=True)
-class _HumidityThresholds:
-    """Relative humidity (%) used as soil-moisture proxy until dedicated VWC
-    probes are deployed (see RulesEngine comment in rules_engine.py).
+class _SoilMoistureThresholds:
+    """Soil volumetric water content (VWC, %).
+
+    These bands describe water *in the root zone* — NOT air humidity.  Until a
+    dedicated VWC probe is deployed, air relative humidity may be supplied as an
+    explicit proxy (see ``SensorSnapshot.soil_moisture_is_proxy``); the proxy is
+    flagged so downstream consumers and the report can label it honestly.
 
     Research basis (soil VWC mapping):
       Well-watered: 40-60 % VWC (Haifa Guide / FAO).
@@ -51,6 +55,29 @@ class _HumidityThresholds:
     warn_high: float = 75.0     # %   — waterlogging / Phytophthora warning
     critical_low: float = 10.0  # %   — wilting / root collapse imminent
     critical_high: float = 85.0 # %   — root anaerobia; severe Phytophthora risk
+
+
+@dataclass(frozen=True)
+class _RelativeHumidityThresholds:
+    """Air relative humidity (%) — the atmospheric moisture of the canopy.
+
+    NOTE: this is physically distinct from soil VWC.  These bands are provided
+    for explicit air-RH assessment and for VPD context; they are documented here
+    so future scoring can use the correct quantity.  They are intentionally NOT
+    wired into the existing health/risk/recommendation scoring yet, to preserve
+    current behaviour (see docs/SENSOR_SEMANTICS.md).
+
+    Research basis (durian, Haifa Guide):
+      Optimal canopy RH: 75-85 %.
+      Below ~60 %: dry air raises VPD and transpiration demand.
+      Above ~90 %: prolonged leaf wetness favours fungal disease.
+    """
+    optimal_low: float = 75.0    # %   — comfortable canopy humidity floor
+    optimal_high: float = 85.0   # %   — comfortable canopy humidity ceiling
+    warn_low: float = 60.0       # %   — dry air; evaporative demand rising
+    warn_high: float = 90.0      # %   — high leaf-wetness / disease pressure
+    critical_low: float = 45.0   # %   — severe dry-air stress
+    critical_high: float = 95.0  # %   — saturated air; strong disease pressure
 
 
 @dataclass(frozen=True)
@@ -124,11 +151,20 @@ class _PhytophthoraThresholds:
 
 # ── Singletons (import these; do not instantiate the classes directly)
 TEMPERATURE = _TemperatureThresholds()
-HUMIDITY = _HumidityThresholds()
+SOIL_MOISTURE = _SoilMoistureThresholds()
+RELATIVE_HUMIDITY = _RelativeHumidityThresholds()
 EC = _ECThresholds()
 PH = _PHThresholds()
 VPD = _VPDThresholds()
 PHYTOPHTHORA = _PhytophthoraThresholds()
+
+# ── Backward-compatible alias.
+# Historically a single ``HUMIDITY`` constant carried the soil-VWC bands and
+# was applied to a relative-humidity *proxy* value.  The bands belong to soil
+# moisture, so ``HUMIDITY`` now points at ``SOIL_MOISTURE``.  Existing imports
+# (`from ._thresholds import HUMIDITY`) keep working unchanged; new code should
+# import ``SOIL_MOISTURE`` (root-zone water) or ``RELATIVE_HUMIDITY`` (air).
+HUMIDITY = SOIL_MOISTURE
 
 
 # ── Utility: VPD calculation (Tetens / Magnus formula)

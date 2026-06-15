@@ -33,7 +33,13 @@ from __future__ import annotations
 from typing import TypedDict
 
 from ._thresholds import (
-    EC, HUMIDITY, PH, PHYTOPHTHORA, TEMPERATURE, VPD, compute_vpd_kpa,
+    EC,
+    HUMIDITY,
+    PH,
+    PHYTOPHTHORA,
+    TEMPERATURE,
+    VPD,
+    compute_vpd_kpa,
 )
 
 

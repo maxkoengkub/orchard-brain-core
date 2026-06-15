@@ -10,7 +10,7 @@ Research basis:
 """
 from __future__ import annotations
 
-from ._agent_base import AgentAssessment
+from ._agent_base import AgentAssessment, RecommendationDict, RiskDict
 from ._thresholds import HUMIDITY, TEMPERATURE
 from .orchard_memory import SensorSnapshot, TrendResult
 
@@ -30,8 +30,8 @@ class FloweringAgent:
         T = snapshot.temperature
         trend_names = {t.trend for t in trends}
 
-        risks: list[dict] = []
-        recs: list[dict] = []
+        risks: list[RiskDict] = []
+        recs: list[RecommendationDict] = []
 
         # ── Prolonged dry spell — flowering trigger window
         prolonged_dry = "prolonged_dry_period" in trend_names
@@ -141,7 +141,7 @@ class FloweringAgent:
         )
 
 
-def _status(risks: list[dict]) -> str:
+def _status(risks: list[RiskDict]) -> str:
     if any(r["severity"] == "critical" for r in risks):
         return "critical"
     if any(r["severity"] == "warning" for r in risks):

@@ -14,11 +14,17 @@ The engine wires chains together from a library of known agronomic pathways.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from ._thresholds import (
-    EC, HUMIDITY, PH, PHYTOPHTHORA, TEMPERATURE, VPD, compute_vpd_kpa,
+    EC,
+    HUMIDITY,
+    PH,
+    PHYTOPHTHORA,
+    TEMPERATURE,
+    VPD,
+    compute_vpd_kpa,
 )
-
 
 # ─────────────────────────────────────────────────── data structure
 
@@ -49,7 +55,7 @@ class CausalEngine:
     (list[str]).
     """
 
-    def build_reasoning_chain(self, observations: dict) -> list[CausalChain]:
+    def build_reasoning_chain(self, observations: dict[str, Any]) -> list[CausalChain]:
         """Return all causal chains triggered by ``observations``.
 
         Chains are ordered from highest to lowest confidence.

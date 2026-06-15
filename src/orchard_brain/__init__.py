@@ -34,21 +34,20 @@ Modules
     _thresholds          Agronomic constants (internal; import for tests only)
 """
 # ── Original API (Phase 1-3 of first implementation — unchanged)
-from .engine import BrainResult, OrchardBrain
-from .health import HealthAssessment, HealthResult
-from .recommendation import Recommendation, RecommendationEngine
-from .risk import Risk, RiskAssessment
-
 # ── Intelligence pipeline (Phases 1-7 of upgrade)
 from ._agent_base import AgentAssessment
 from .causal_engine import CausalChain, CausalEngine
 from .disease_agent import DiseaseAgent
+from .engine import BrainResult, OrchardBrain
 from .flowering_agent import FloweringAgent
+from .health import HealthAssessment, HealthResult
 from .nutrition_agent import NutritionAgent
 from .orchard_graph import OrchardGraph
 from .orchard_memory import OrchardMemory, SensorSnapshot, TrendResult
 from .orchard_orchestrator import OrchardOrchestrator, OrchestratorResult
 from .orchard_report import OrchardReport
+from .recommendation import Recommendation, RecommendationEngine
+from .risk import Risk, RiskAssessment
 from .water_agent import WaterAgent
 from .yield_agent import YieldAgent
 

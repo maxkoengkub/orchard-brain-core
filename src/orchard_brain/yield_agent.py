@@ -11,7 +11,7 @@ Yield potential is rated on a 0-100 index derived from:
 """
 from __future__ import annotations
 
-from ._agent_base import AgentAssessment
+from ._agent_base import AgentAssessment, RecommendationDict, RiskDict
 from ._thresholds import EC, HUMIDITY, PH, PHYTOPHTHORA, TEMPERATURE, VPD, compute_vpd_kpa
 from .orchard_memory import SensorSnapshot, TrendResult
 
@@ -52,8 +52,8 @@ class YieldAgent:
             + disease_score  * self._W_DISEASE
         )
 
-        risks: list[dict] = []
-        recs: list[dict] = []
+        risks: list[RiskDict] = []
+        recs: list[RecommendationDict] = []
 
         # Limiting factors
         limiting = self._find_limiting_factors(
@@ -152,9 +152,6 @@ class YieldAgent:
         return base
 
     def _nutrient_score(self, ec: float, ph: float) -> float:
-        ec_ok = EC.optimal_low <= ec <= EC.optimal_high
-        ph_ok = PH.optimal_low <= ph <= PH.optimal_high
-
         ec_score = 100.0
         if ec < EC.optimal_low:
             ec_score = max(0.0, 100.0 - (EC.optimal_low - ec) / EC.optimal_low * 70.0)
@@ -200,7 +197,7 @@ class YieldAgent:
         return [name for name, score in scored if score < 70]
 
 
-def _status(risks: list[dict]) -> str:
+def _status(risks: list[RiskDict]) -> str:
     if any(r["severity"] == "critical" for r in risks):
         return "critical"
     if any(r["severity"] == "warning" for r in risks):

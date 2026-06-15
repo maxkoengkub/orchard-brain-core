@@ -1,8 +1,8 @@
 """RecommendationEngine — derives actionable recommendations from assessments.
 
-Recommendations map directly to the action types recognised by the existing
-``ActionSubscriber`` / ``VALID_ACTIONS`` set where an automated actuator exists,
-or carry a descriptive advisory key otherwise.
+Each recommendation carries an ``action`` key.  Where a future actuator layer
+(e.g. a PLC/relay adapter) recognises the key, it maps to a control action;
+otherwise the key is a descriptive advisory for the operator.
 
 Priority levels
 ───────────────
@@ -29,7 +29,7 @@ safe zone, the more certain the recommendation.
 
 Output format per recommendation item:
   {
-      "action":     str,   # matches VALID_ACTIONS or advisory key
+      "action":     str,   # actuator action key or advisory key
       "priority":   str,   # "critical" | "high" | "medium" | "low"
       "reason":     str,   # human-readable explanation with threshold citations
       "confidence": float, # 0.0-1.0
@@ -46,7 +46,13 @@ from __future__ import annotations
 from typing import TypedDict
 
 from ._thresholds import (
-    EC, HUMIDITY, PH, PHYTOPHTHORA, TEMPERATURE, VPD, compute_vpd_kpa,
+    EC,
+    HUMIDITY,
+    PH,
+    PHYTOPHTHORA,
+    TEMPERATURE,
+    VPD,
+    compute_vpd_kpa,
 )
 from .health import HealthResult
 from .risk import Risk

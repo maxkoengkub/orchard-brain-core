@@ -6,9 +6,9 @@ ready for ``OrchardReport`` and the public ``OrchardBrain`` API.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-from ._agent_base import AgentAssessment
+from ._agent_base import AgentAssessment, RecommendationDict, RiskDict
 from .causal_engine import CausalChain, CausalEngine
 from .disease_agent import DiseaseAgent
 from .flowering_agent import FloweringAgent
@@ -26,8 +26,8 @@ class OrchestratorResult:
     trends: list[TrendResult]
     agent_assessments: list[AgentAssessment]
     causal_chains: list[CausalChain]
-    ranked_recommendations: list[dict]
-    aggregated_risks: list[dict]
+    ranked_recommendations: list[RecommendationDict]
+    aggregated_risks: list[RiskDict]
     overall_status: str            # "ok" | "warning" | "critical"
     overall_confidence: float      # 0.0 – 1.0
     knowledge_paths: dict[str, list[str]]  # key → explained path
@@ -131,10 +131,10 @@ class OrchardOrchestrator:
 # ─────────────────────────────────────────────────────── helpers
 
 
-def _deduplicate_risks(risks: list[dict]) -> list[dict]:
+def _deduplicate_risks(risks: list[RiskDict]) -> list[RiskDict]:
     """Keep only the highest-severity entry for each risk identifier."""
     severity_rank = {"critical": 0, "warning": 1}
-    best: dict[str, dict] = {}
+    best: dict[str, RiskDict] = {}
     for r in risks:
         key = r["risk"]
         if key not in best or severity_rank[r["severity"]] < severity_rank[best[key]["severity"]]:
@@ -144,10 +144,10 @@ def _deduplicate_risks(risks: list[dict]) -> list[dict]:
     return result
 
 
-def _deduplicate_and_rank(recs: list[dict]) -> list[dict]:
+def _deduplicate_and_rank(recs: list[RecommendationDict]) -> list[RecommendationDict]:
     """Deduplicate by action key; sort by priority then confidence (desc)."""
     seen: set[str] = set()
-    unique: list[dict] = []
+    unique: list[RecommendationDict] = []
     for rec in recs:
         key = rec["action"]
         if key not in seen:
