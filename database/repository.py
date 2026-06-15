@@ -180,8 +180,48 @@ class DatabaseRepository:
             time=datetime.now(timezone.utc),
             event_type="CONFIG_PUSH",
             message=f"Configuration push staged for hash {config['config_hash']}",
-            metadata_json=config
+            metadata_json=config,
+            # For simplicity, we can track status in a specific field or use message suffix,
+            # but since SystemEventModel does not have a status column, we'll need to rely on
+            # appending to message or adding a status key to metadata_json.
         )
+        # Let's ensure metadata_json has a status
+        event.metadata_json["status"] = "PENDING"
         self.session.add(event)
         await self.session.commit()
+        return event
+
+    async def get_pending_commands(self, limit: int = 10):
+        stmt = select(CommandHistoryModel).where(CommandHistoryModel.status == "PENDING").order_by(CommandHistoryModel.time).limit(limit)
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def update_command_status(self, command_id: str, status: str):
+        stmt = select(CommandHistoryModel).where(CommandHistoryModel.command_id == command_id)
+        result = await self.session.execute(stmt)
+        cmd = result.scalar_one_or_none()
+        if cmd:
+            cmd.status = status
+            await self.session.commit()
+        return cmd
+
+    async def get_pending_configurations(self, limit: int = 10):
+        # We find system events of type CONFIG_PUSH where metadata_json->>'status' == 'PENDING'
+        # Since we use SQLite in tests and PG in prod, querying JSON in SQLAlchemy can be tricky without dialect specific logic.
+        # So we query all recent ones and filter in python, since config pushes are rare.
+        stmt = select(SystemEventModel).where(SystemEventModel.event_type == "CONFIG_PUSH").order_by(SystemEventModel.time).limit(limit * 5)
+        result = await self.session.execute(stmt)
+        events = result.scalars().all()
+        pending = [e for e in events if e.metadata_json and e.metadata_json.get("status") == "PENDING"]
+        return pending[:limit]
+
+    async def update_configuration_status(self, event_id: int, status: str):
+        stmt = select(SystemEventModel).where(SystemEventModel.id == event_id)
+        result = await self.session.execute(stmt)
+        event = result.scalar_one_or_none()
+        if event:
+            new_meta = dict(event.metadata_json) if event.metadata_json else {}
+            new_meta["status"] = status
+            event.metadata_json = new_meta
+            await self.session.commit()
         return event

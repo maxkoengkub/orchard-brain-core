@@ -6,6 +6,7 @@ import hashlib
 PKT_TYPE_DATA_ACK = 0x2
 PKT_TYPE_DATA_NACK = 0x3
 PKT_TYPE_CONFIG_PUSH = 0x6
+PKT_TYPE_CONFIG_ACK = 0x7
 PKT_TYPE_ACTUATION = 0xD # Using one of the reserved
 
 MAC_HEADER_FMT = "<HHBB"
