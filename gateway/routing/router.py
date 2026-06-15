@@ -36,18 +36,9 @@ class GatewayRouter:
         self.transport.send_bytes(ack_frame)
         
         # 2. Route to Intelligence Core
-        # Map Phase 1A SensorReading directly to OrchardBrain snapshot
-        brain_reading = {
-            "temperature": reading.temperature,
-            "humidity": reading.humidity,
-            "ec": reading.ec,
-            "ph": reading.ph,
-            "soil_moisture": reading.soil_moisture,
-            "rainfall": reading.rainfall
-        }
-        
         try:
-            orch_result = self.orchard_brain.evaluate_orchestrated(brain_reading)
+            # Pass the Pydantic model directly to OrchardBrain
+            orch_result = self.orchard_brain.evaluate_orchestrated(reading)
             logger.info(f"Brain evaluation complete for node {reading.node_id}")
         except Exception as e:
             logger.error(f"Brain evaluation failed: {e}")

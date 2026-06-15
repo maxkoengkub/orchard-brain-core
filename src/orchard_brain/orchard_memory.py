@@ -46,14 +46,18 @@ class SensorSnapshot:
     @classmethod
     def from_reading(cls, reading: object, rainfall: float = 0.0) -> "SensorSnapshot":
         """Construct from any object with .temperature, .humidity, .ec, .ph."""
+        # Backward compatibility fallback
+        soil_moisture = getattr(reading, "soil_moisture", reading.humidity)
+        rfall = getattr(reading, "rainfall", rainfall)
+        
         return cls(
             timestamp=datetime.now(tz=timezone.utc),
-            soil_moisture=reading.humidity,
+            soil_moisture=soil_moisture,
             temperature=reading.temperature,
             humidity=reading.humidity,
             ph=reading.ph,
             ec=reading.ec,
-            rainfall=rainfall,
+            rainfall=rfall,
         )
 
 
