@@ -9,6 +9,7 @@ from gateway.packet_encoder.encoder import LoRaEncoder
 from gateway.packet_decoder.decoder import LoRaDecoder
 from gateway.transport.lora_serial import LoraSerial
 from gateway.service import GatewayService
+from src.orchard_brain.engine import OrchardBrain
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -33,27 +34,28 @@ async def async_main():
         transport = None # Ideally fall back to a MockTransport, or exit
         sys.exit(1)
 
-    async with AsyncSessionLocal() as session:
-        repo = DatabaseRepository(session)
-        service = GatewayService(
-            repository=repo,
-            encoder=encoder,
-            decoder=decoder,
-            transport=transport
-        )
-        
-        await service.start()
-        
-        try:
-            # Keep the main thread alive indefinitely
-            while True:
-                await asyncio.sleep(3600)
-        except asyncio.CancelledError:
-            pass
-        finally:
-            service.stop()
-            if transport:
-                transport.disconnect()
+    brain = OrchardBrain(enable_memory=False)
+
+    service = GatewayService(
+        session_factory=AsyncSessionLocal,
+        encoder=encoder,
+        decoder=decoder,
+        transport=transport,
+        brain=brain
+    )
+    
+    await service.start()
+    
+    try:
+        # Keep the main thread alive indefinitely
+        while True:
+            await asyncio.sleep(3600)
+    except asyncio.CancelledError:
+        pass
+    finally:
+        service.stop()
+        if transport:
+            transport.disconnect()
 
 def main():
     try:

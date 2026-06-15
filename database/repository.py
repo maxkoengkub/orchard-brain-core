@@ -98,6 +98,40 @@ class DatabaseRepository:
         await self.session.commit()
         return health
 
+    async def save_brain_result(self, node_id: int, dt: datetime, brain_result: dict):
+        health = OrchardHealthModel(
+            time=dt,
+            node_id=node_id,
+            health_score=brain_result["health_score"],
+            water_stress=brain_result["water_stress"],
+            nutrient_stress=brain_result["nutrient_stress"]
+        )
+        self.session.add(health)
+        
+        for risk in brain_result.get("risks", []):
+            risk_model = RiskModel(
+                time=dt,
+                node_id=node_id,
+                risk_type=risk["risk"],
+                severity=risk["severity"],
+                description=risk["message"]
+            )
+            self.session.add(risk_model)
+            
+        for rec in brain_result.get("recommendations", []):
+            rec_model = RecommendationModel(
+                time=dt,
+                node_id=node_id,
+                action=rec["action"],
+                priority=rec["priority"],
+                reason=rec["reason"],
+                confidence=rec["confidence"]
+            )
+            self.session.add(rec_model)
+            
+        await self.session.commit()
+        return health
+
     async def update_node_status(self, status: dict):
         node_id = status["node_id"]
         stmt = select(NodeStatusModel).where(NodeStatusModel.node_id == node_id)
