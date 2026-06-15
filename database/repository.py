@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import desc
 from datetime import datetime, timezone
 import json
 
@@ -122,6 +123,64 @@ class DatabaseRepository:
             event_type=event_type,
             message=message,
             metadata_json=metadata
+        )
+        self.session.add(event)
+        await self.session.commit()
+        return event
+
+    # --- Read Operations ---
+
+    async def get_sensor_history(self, node_id: int = None, limit: int = 100):
+        stmt = select(SensorReadingModel).order_by(desc(SensorReadingModel.time)).limit(limit)
+        if node_id is not None:
+            stmt = stmt.where(SensorReadingModel.node_id == node_id)
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def get_recommendations(self, node_id: int = None, limit: int = 50):
+        stmt = select(RecommendationModel).order_by(desc(RecommendationModel.time)).limit(limit)
+        if node_id is not None:
+            stmt = stmt.where(RecommendationModel.node_id == node_id)
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def get_risk_summary(self, node_id: int = None, limit: int = 50):
+        stmt = select(RiskModel).order_by(desc(RiskModel.time)).limit(limit)
+        if node_id is not None:
+            stmt = stmt.where(RiskModel.node_id == node_id)
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def get_nodes(self):
+        stmt = select(NodeStatusModel)
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    # --- Command & Config Queue Operations ---
+
+    async def save_command(self, cmd: dict):
+        db_cmd = CommandHistoryModel(
+            command_id=cmd["command_id"],
+            time=datetime.now(timezone.utc),
+            node_id=cmd["target_node"],
+            actuator_type=cmd["actuator_type"],
+            action=cmd["action"],
+            value=cmd.get("value", 0.0),
+            duration_sec=cmd.get("duration_sec", 0),
+            status="PENDING"
+        )
+        self.session.add(db_cmd)
+        await self.session.commit()
+        return db_cmd
+
+    async def save_configuration(self, config: dict):
+        # We model config pushes as system events for simplicity, 
+        # or Gateway will poll PENDING system_events of type CONFIG_PUSH
+        event = SystemEventModel(
+            time=datetime.now(timezone.utc),
+            event_type="CONFIG_PUSH",
+            message=f"Configuration push staged for hash {config['config_hash']}",
+            metadata_json=config
         )
         self.session.add(event)
         await self.session.commit()
