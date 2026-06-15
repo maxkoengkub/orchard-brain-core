@@ -17,9 +17,10 @@ Output sections:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from .health import HealthAssessment
+from ._agent_base import RecommendationDict
+from .health import HealthResult
 from .orchard_orchestrator import OrchestratorResult
 
 _SEP = "─" * 65
@@ -27,7 +28,7 @@ _THICK = "═" * 65
 
 
 def _now() -> str:
-    return datetime.now(tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    return datetime.now(tz=UTC).strftime("%Y-%m-%d %H:%M UTC")
 
 
 class OrchardReport:
@@ -50,7 +51,7 @@ class OrchardReport:
     def generate(
         self,
         result: OrchestratorResult,
-        health_result=None,   # HealthResult — optional for backward compat
+        health_result: HealthResult | None = None,   # optional for backward compat
     ) -> str:
         """Return the full report as a string."""
         lines: list[str] = []
@@ -84,16 +85,19 @@ class OrchardReport:
             "",
         ]
 
-    def _reading_summary(self, result: OrchestratorResult, health_result) -> list[str]:
+    def _reading_summary(
+        self, result: OrchestratorResult, health_result: HealthResult | None
+    ) -> list[str]:
         s = result.snapshot
         vpd = s.vpd if s.vpd is not None else 0.0
+        proxy_note = "  [proxy: derived from air RH]" if s.soil_moisture_is_proxy else ""
         lines = [
             _SEP,
             "SECTION 1 — CURRENT READING",
             _SEP,
             f"  Timestamp       : {s.timestamp.strftime('%Y-%m-%d %H:%M UTC') if s.timestamp.tzinfo else s.timestamp.strftime('%Y-%m-%d %H:%M')}",
             f"  Temperature     : {s.temperature:.1f} °C     (optimal: 25–32 °C)",
-            f"  Soil Moisture   : {s.soil_moisture:.1f} %    (optimal: 40–60 % VWC)",
+            f"  Soil Moisture   : {s.soil_moisture:.1f} %    (optimal: 40–60 % VWC){proxy_note}",
             f"  Humidity        : {s.humidity:.1f} %",
             f"  EC              : {s.ec:.0f} µS/cm  (optimal: 150–300 µS/cm)",
             f"  pH              : {s.ph:.2f}         (optimal: 5.5–6.5)",
@@ -103,7 +107,7 @@ class OrchardReport:
         ]
         return lines
 
-    def _health_metrics(self, health_result) -> list[str]:
+    def _health_metrics(self, health_result: HealthResult | None) -> list[str]:
         if health_result is None:
             return []
         lines = [
@@ -182,7 +186,9 @@ class OrchardReport:
             lines += ["  No actions required — orchard is in excellent condition.", ""]
             return lines
 
-        priority_groups = {"critical": [], "high": [], "medium": [], "low": []}
+        priority_groups: dict[str, list[RecommendationDict]] = {
+            "critical": [], "high": [], "medium": [], "low": [],
+        }
         for rec in result.ranked_recommendations:
             p = rec.get("priority", "low")
             if p in priority_groups:

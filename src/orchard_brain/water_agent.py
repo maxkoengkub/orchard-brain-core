@@ -7,7 +7,7 @@ Returns an ``AgentAssessment`` following the shared contract in _agent_base.py.
 """
 from __future__ import annotations
 
-from ._agent_base import AgentAssessment
+from ._agent_base import AgentAssessment, RecommendationDict, RiskDict
 from ._thresholds import HUMIDITY, VPD, compute_vpd_kpa
 from .orchard_memory import SensorSnapshot, TrendResult
 
@@ -25,10 +25,9 @@ class WaterAgent:
         trends = trends or []
         sm = snapshot.soil_moisture
         vpd = snapshot.vpd or compute_vpd_kpa(snapshot.temperature, snapshot.humidity)
-        T = snapshot.temperature
 
-        risks: list[dict] = []
-        recs: list[dict] = []
+        risks: list[RiskDict] = []
+        recs: list[RecommendationDict] = []
 
         # ── soil moisture risks
         if sm <= HUMIDITY.critical_low:
@@ -122,7 +121,7 @@ class WaterAgent:
         )
 
 
-def _status(risks: list[dict]) -> str:
+def _status(risks: list[RiskDict]) -> str:
     if any(r["severity"] == "critical" for r in risks):
         return "critical"
     if any(r["severity"] == "warning" for r in risks):

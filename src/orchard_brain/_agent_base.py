@@ -8,6 +8,21 @@ from __future__ import annotations
 from typing import TypedDict
 
 
+class RiskDict(TypedDict):
+    """A single risk finding (same shape as ``risk.Risk``)."""
+    risk: str       # identifier, e.g. "drought" | "phytophthora_risk"
+    severity: str   # "warning" | "critical"
+    message: str    # human-readable explanation with actual values
+
+
+class RecommendationDict(TypedDict):
+    """A single recommendation (same shape as ``recommendation.Recommendation``)."""
+    action: str        # action key, e.g. "trigger_irrigation"
+    priority: str      # "critical" | "high" | "medium" | "low"
+    reason: str        # human-readable justification
+    confidence: float  # 0.0 – 1.0
+
+
 class AgentAssessment(TypedDict):
     """Standardised output produced by every specialist agent.
 
@@ -25,7 +40,7 @@ class AgentAssessment(TypedDict):
     """
     agent: str
     status: str
-    risks: list[dict]
-    recommendations: list[dict]
+    risks: list[RiskDict]
+    recommendations: list[RecommendationDict]
     confidence: float
     reasoning: str

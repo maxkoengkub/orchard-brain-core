@@ -5,7 +5,7 @@ as proxies for nutrient availability and fertigation balance.
 """
 from __future__ import annotations
 
-from ._agent_base import AgentAssessment
+from ._agent_base import AgentAssessment, RecommendationDict, RiskDict
 from ._thresholds import EC, PH
 from .orchard_memory import SensorSnapshot, TrendResult
 
@@ -24,8 +24,8 @@ class NutritionAgent:
         ph = snapshot.ph
         ec = snapshot.ec
 
-        risks: list[dict] = []
-        recs: list[dict] = []
+        risks: list[RiskDict] = []
+        recs: list[RecommendationDict] = []
 
         # ── pH risks (research: optimal 5.5-6.5; Ngoc et al., 2024)
         if ph <= PH.critical_low:
@@ -136,7 +136,7 @@ def _conf(value: float, warn: float, critical: float) -> float:
     return round(0.60 + ratio * 0.37, 2)
 
 
-def _status(risks: list[dict]) -> str:
+def _status(risks: list[RiskDict]) -> str:
     if any(r["severity"] == "critical" for r in risks):
         return "critical"
     if any(r["severity"] == "warning" for r in risks):

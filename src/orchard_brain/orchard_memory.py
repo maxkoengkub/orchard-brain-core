@@ -11,11 +11,31 @@ Usage::
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+import warnings
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 
-from ._thresholds import HUMIDITY, TEMPERATURE, VPD, compute_vpd_kpa
+from ._thresholds import SOIL_MOISTURE, TEMPERATURE, VPD, compute_vpd_kpa
+
+_soil_moisture_proxy_warned = False
+
+
+def _warn_soil_moisture_proxy_once() -> None:
+    """Emit a single process-wide warning when air RH is used as a VWC proxy.
+
+    Air relative humidity and soil volumetric water content are physically
+    different quantities; using one for the other is a known limitation until a
+    dedicated VWC probe is installed.  The warning fires once to avoid log spam.
+    """
+    global _soil_moisture_proxy_warned
+    if not _soil_moisture_proxy_warned:
+        _soil_moisture_proxy_warned = True
+        warnings.warn(
+            "soil_moisture not supplied; using air humidity as a proxy. "
+            "Provide a measured VWC value (SensorSnapshot.from_reading("
+            "..., soil_moisture=...)) for accurate root-zone assessment.",
+            stacklevel=3,
+        )
 
 
 # ─────────────────────────────────────────────────── data structures
@@ -25,35 +45,66 @@ from ._thresholds import HUMIDITY, TEMPERATURE, VPD, compute_vpd_kpa
 class SensorSnapshot:
     """One point-in-time reading of all orchard sensor channels.
 
-    ``rainfall`` and ``vpd`` can be derived if not directly measured:
+    Channel semantics (see docs/SENSOR_SEMANTICS.md):
+      - ``soil_moisture`` is root-zone volumetric water content (VWC, %).  It is
+        physically distinct from air ``humidity``.  When no VWC probe is yet
+        deployed, air humidity may be supplied as an explicit *proxy*, in which
+        case ``soil_moisture_is_proxy`` is True.
+      - ``humidity`` is air relative humidity (%), used for VPD.
       - ``vpd`` is computed from temperature + humidity if not provided.
       - ``rainfall`` defaults to 0.0 if no rain gauge is installed.
     """
     timestamp: datetime
-    soil_moisture: float        # % (humidity proxy until VWC probe is installed)
+    soil_moisture: float        # % VWC (root zone); may be an air-RH proxy — see flag
     temperature: float          # °C
-    humidity: float             # % relative humidity (same sensor as soil_moisture
-                                #    for this system — see architecture note)
+    humidity: float             # % air relative humidity (drives VPD)
     ph: float                   # soil/water pH
     ec: float                   # µS/cm fertigation solution EC
     rainfall: float = 0.0       # mm in this sampling period (0 if no gauge)
-    vpd: Optional[float] = None # kPa — auto-computed below if None
+    vpd: float | None = None # kPa — auto-computed below if None
+    soil_moisture_is_proxy: bool = False  # True when soil_moisture is derived from air RH
 
     def __post_init__(self) -> None:
         if self.vpd is None:
             self.vpd = compute_vpd_kpa(self.temperature, self.humidity)
 
     @classmethod
-    def from_reading(cls, reading: object, rainfall: float = 0.0) -> "SensorSnapshot":
-        """Construct from any object with .temperature, .humidity, .ec, .ph."""
+    def from_reading(
+        cls,
+        reading: object,
+        rainfall: float = 0.0,
+        soil_moisture: float | None = None,
+    ) -> SensorSnapshot:
+        """Construct from any object with .temperature, .humidity, .ec, .ph.
+
+        Args:
+            reading: Object exposing ``.temperature``, ``.humidity``, ``.ec``,
+                     ``.ph`` (all floats).
+            rainfall: Optional rainfall (mm) for this sampling period.
+            soil_moisture: Measured root-zone VWC (%).  When ``None`` (no probe
+                           available), air ``humidity`` is used as an explicit
+                           proxy and ``soil_moisture_is_proxy`` is set True.
+
+        The default (``soil_moisture=None``) preserves the original behaviour
+        exactly, while making the proxy explicit and overridable.
+        """
+        if soil_moisture is None:
+            soil_moisture_value = reading.humidity  # type: ignore[attr-defined]
+            is_proxy = True
+            _warn_soil_moisture_proxy_once()
+        else:
+            soil_moisture_value = soil_moisture
+            is_proxy = False
+
         return cls(
-            timestamp=datetime.now(tz=timezone.utc),
-            soil_moisture=reading.humidity,
-            temperature=reading.temperature,
-            humidity=reading.humidity,
-            ph=reading.ph,
-            ec=reading.ec,
+            timestamp=datetime.now(tz=UTC),
+            soil_moisture=soil_moisture_value,
+            temperature=reading.temperature,  # type: ignore[attr-defined]
+            humidity=reading.humidity,  # type: ignore[attr-defined]
+            ph=reading.ph,  # type: ignore[attr-defined]
+            ec=reading.ec,  # type: ignore[attr-defined]
             rainfall=rainfall,
+            soil_moisture_is_proxy=is_proxy,
         )
 
 
@@ -103,7 +154,7 @@ class OrchardMemory:
 
     def get_last_days(self, days: float) -> list[SensorSnapshot]:
         """Return snapshots from the last ``days`` days."""
-        cutoff = datetime.now(tz=timezone.utc) - timedelta(days=days)
+        cutoff = datetime.now(tz=UTC) - timedelta(days=days)
         return [
             s for s in self._snapshots
             if _utc(s.timestamp) >= cutoff
@@ -137,7 +188,7 @@ class OrchardMemory:
     def snapshot_count(self) -> int:
         return len(self._snapshots)
 
-    def latest(self) -> Optional[SensorSnapshot]:
+    def latest(self) -> SensorSnapshot | None:
         return self._snapshots[-1] if self._snapshots else None
 
 
@@ -147,7 +198,7 @@ class OrchardMemory:
 def _utc(dt: datetime) -> datetime:
     """Ensure tz-aware UTC for comparison."""
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
+        return dt.replace(tzinfo=UTC)
     return dt
 
 
@@ -206,7 +257,7 @@ def _soil_moisture_trend(snaps: list[SensorSnapshot]) -> list[TrendResult]:
                 f"Soil moisture has fallen {delta:.1f} % over the last "
                 f"{len(snaps)} samples "
                 f"(current: {vals[-1]:.1f} %, slope: {slope:+.3f} %/sample). "
-                f"{'Drought warning active.' if vals[-1] < HUMIDITY.warn_low else ''}"
+                f"{'Drought warning active.' if vals[-1] < SOIL_MOISTURE.warn_low else ''}"
             ),
         )]
     return []
@@ -242,7 +293,7 @@ def _dry_period_trend(snaps: list[SensorSnapshot]) -> list[TrendResult]:
     (below warn_low) over multiple consecutive samples signals a dry spell
     that may trigger flowering initiation.
     """
-    dry_count = sum(1 for s in snaps if s.soil_moisture < HUMIDITY.warn_low and s.rainfall < 0.1)
+    dry_count = sum(1 for s in snaps if s.soil_moisture < SOIL_MOISTURE.warn_low and s.rainfall < 0.1)
     ratio = dry_count / len(snaps)
     if ratio >= 0.6 and len(snaps) >= 6:
         conf = min(0.90, 0.55 + ratio * 0.35)
@@ -253,7 +304,7 @@ def _dry_period_trend(snaps: list[SensorSnapshot]) -> list[TrendResult]:
             confidence=round(conf, 2),
             description=(
                 f"{dry_count}/{len(snaps)} samples show soil moisture below "
-                f"{HUMIDITY.warn_low:.0f} % with near-zero rainfall ({ratio:.0%} of window). "
+                f"{SOIL_MOISTURE.warn_low:.0f} % with near-zero rainfall ({ratio:.0%} of window). "
                 "Prolonged dry conditions may trigger durian flowering initiation "
                 "if sustained for ~15 days (Eguchi et al., 2024)."
             ),
@@ -263,7 +314,7 @@ def _dry_period_trend(snaps: list[SensorSnapshot]) -> list[TrendResult]:
 
 def _wet_period_trend(snaps: list[SensorSnapshot]) -> list[TrendResult]:
     """Detect excessive wet period (Phytophthora risk window)."""
-    wet_count = sum(1 for s in snaps if s.soil_moisture > HUMIDITY.warn_high)
+    wet_count = sum(1 for s in snaps if s.soil_moisture > SOIL_MOISTURE.warn_high)
     ratio = wet_count / len(snaps)
     if ratio >= 0.5 and len(snaps) >= 6:
         conf = min(0.90, 0.55 + ratio * 0.35)
@@ -274,7 +325,7 @@ def _wet_period_trend(snaps: list[SensorSnapshot]) -> list[TrendResult]:
             confidence=round(conf, 2),
             description=(
                 f"{wet_count}/{len(snaps)} samples show soil moisture above "
-                f"{HUMIDITY.warn_high:.0f} % ({ratio:.0%} of window). "
+                f"{SOIL_MOISTURE.warn_high:.0f} % ({ratio:.0%} of window). "
                 "Persistently wet soil significantly raises Phytophthora palmivora "
                 "infection risk (Guest & Drenth, 2004)."
             ),

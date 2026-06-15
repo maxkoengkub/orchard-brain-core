@@ -67,8 +67,8 @@ class HealthResult:
 class HealthAssessment:
     """Stateless assessor — call ``assess(temperature, humidity, ec, ph)``.
 
-    All parameters follow the same conventions used in ``SensorReading``
-    (validator.py):  temperature in °C, humidity in %, ec in µS/cm, ph 0–14.
+    All parameters follow the duck-typed sensor-reading contract:
+    temperature in °C, humidity in %, ec in µS/cm, ph 0–14.
 
     Returns a ``HealthResult`` with integer scores for the public API and
     float raw values for unit-testing precision.
