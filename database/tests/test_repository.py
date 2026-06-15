@@ -16,11 +16,16 @@ async def test_save_sensor_reading(db_session):
         soil_moisture=45.0,
         ec=1.2,
         ph=6.5,
-        rainfall=0.0,
+        rainfall=None,
+        leaf_wetness=0.0,
+        solar_radiation=1200.0,
+        wind_speed=None,
+        wind_direction=None,
         sensor_mask=255,
         battery_pct=95,
         tx_reason=0,
-        rssi_last_rx=-50
+        rssi_last_rx=-50,
+        metadata_json={"calibration_status": "ok"}
     )
     
     saved = await repo.save_sensor_reading(reading)
@@ -28,6 +33,27 @@ async def test_save_sensor_reading(db_session):
     assert saved.node_id == 10
     assert saved.temperature == 25.5
     assert saved.time.timestamp() == 1718000000
+    assert saved.rainfall is None
+    assert saved.solar_radiation == 1200.0
+    assert saved.metadata_json == {"calibration_status": "ok"}
+
+@pytest.mark.asyncio
+async def test_save_infrastructure_reading(db_session):
+    repo = DatabaseRepository(db_session)
+    
+    data = {
+        "flow_rate": 50.5,
+        "tank_level": 85.0,
+        "fertilizer_tank_level": 40.0,
+        "pump_status": 1,
+        "metadata_json": {"pump_temp": 35.2}
+    }
+    
+    saved = await repo.save_infrastructure_reading(11, 1718000500, data)
+    assert saved.node_id == 11
+    assert saved.flow_rate == 50.5
+    assert saved.pump_status == 1
+    assert saved.metadata_json["pump_temp"] == 35.2
 
 @pytest.mark.asyncio
 async def test_save_orchestrator_result(db_session):

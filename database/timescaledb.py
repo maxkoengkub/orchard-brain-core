@@ -13,12 +13,18 @@ def setup_timescaledb(session: Session):
         # Create hypertable for orchard_health
         session.execute(text("SELECT create_hypertable('orchard_health', 'time', if_not_exists => TRUE);"))
         
+        # Create hypertable for infrastructure_metrics
+        session.execute(text("SELECT create_hypertable('infrastructure_metrics', 'time', if_not_exists => TRUE);"))
+        
         # Set retention policies (e.g. drop raw data older than 2 years)
         session.execute(text("SELECT add_retention_policy('sensor_readings', drop_after => INTERVAL '2 years', if_not_exists => TRUE);"))
         
         # Enable compression
         session.execute(text("ALTER TABLE sensor_readings SET (timescaledb.compress, timescaledb.compress_segmentby = 'node_id');"))
         session.execute(text("SELECT add_compression_policy('sensor_readings', compress_after => INTERVAL '7 days', if_not_exists => TRUE);"))
+        
+        session.execute(text("ALTER TABLE infrastructure_metrics SET (timescaledb.compress, timescaledb.compress_segmentby = 'node_id');"))
+        session.execute(text("SELECT add_compression_policy('infrastructure_metrics', compress_after => INTERVAL '7 days', if_not_exists => TRUE);"))
 
         session.commit()
     except Exception as e:

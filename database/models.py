@@ -2,6 +2,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy import Integer, Float, String, DateTime, ForeignKeyConstraint, Boolean, JSON
 from sqlalchemy.sql import func
 from datetime import datetime
+from typing import Optional
 
 class Base(DeclarativeBase):
     pass
@@ -18,12 +19,32 @@ class SensorReadingModel(Base):
     soil_moisture: Mapped[float] = mapped_column(Float)
     ec: Mapped[float] = mapped_column(Float)
     ph: Mapped[float] = mapped_column(Float)
-    rainfall: Mapped[float] = mapped_column(Float)
+    rainfall: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    
+    leaf_wetness: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    solar_radiation: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    wind_speed: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    wind_direction: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     
     sensor_mask: Mapped[int] = mapped_column(Integer)
     battery_pct: Mapped[int] = mapped_column(Integer)
     tx_reason: Mapped[int] = mapped_column(Integer)
     rssi_last_rx: Mapped[int] = mapped_column(Integer)
+    
+    metadata_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
+class InfrastructureReadingModel(Base):
+    __tablename__ = 'infrastructure_metrics'
+    
+    time: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    node_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    
+    flow_rate: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    tank_level: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    fertilizer_tank_level: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    pump_status: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    
+    metadata_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
 class OrchardHealthModel(Base):
     __tablename__ = 'orchard_health'

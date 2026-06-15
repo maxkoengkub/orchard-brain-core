@@ -24,11 +24,19 @@ class SensorReading(BaseModel):
     soil_moisture: float
     ec: float
     ph: float
-    rainfall: float
+    rainfall: Optional[float] = None
+    
+    leaf_wetness: Optional[float] = None
+    solar_radiation: Optional[float] = None
+    wind_speed: Optional[float] = None
+    wind_direction: Optional[int] = None
+    
     sensor_mask: int
     battery_pct: int = Field(ge=0, le=100)
     tx_reason: int
     rssi_last_rx: int
+    
+    metadata_json: Optional[dict] = None
 
 
 class ActuationCommand(BaseModel):

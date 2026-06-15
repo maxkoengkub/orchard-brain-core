@@ -39,7 +39,7 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
+    url = "sqlite:///alembic.db"
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -64,8 +64,13 @@ async def run_async_migrations() -> None:
 
     """
 
+    # override the url in the ini file
+    configuration = config.get_section(config.config_ini_section)
+    if configuration is None:
+        configuration = {}
+    configuration["sqlalchemy.url"] = "sqlite+aiosqlite:///alembic.db"
     connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )

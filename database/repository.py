@@ -10,7 +10,8 @@ from database.models import (
     RecommendationModel,
     NodeStatusModel,
     CommandHistoryModel,
-    SystemEventModel
+    SystemEventModel,
+    InfrastructureReadingModel
 )
 from shared.payloads.models import SensorReading
 
@@ -32,11 +33,31 @@ class DatabaseRepository:
             soil_moisture=reading.soil_moisture,
             ec=reading.ec,
             ph=reading.ph,
-            rainfall=reading.rainfall,
+            rainfall=getattr(reading, "rainfall", None),
+            leaf_wetness=getattr(reading, "leaf_wetness", None),
+            solar_radiation=getattr(reading, "solar_radiation", None),
+            wind_speed=getattr(reading, "wind_speed", None),
+            wind_direction=getattr(reading, "wind_direction", None),
             sensor_mask=reading.sensor_mask,
             battery_pct=reading.battery_pct,
             tx_reason=reading.tx_reason,
-            rssi_last_rx=reading.rssi_last_rx
+            rssi_last_rx=reading.rssi_last_rx,
+            metadata_json=getattr(reading, "metadata_json", None)
+        )
+        self.session.add(db_reading)
+        await self.session.commit()
+        return db_reading
+
+    async def save_infrastructure_reading(self, node_id: int, timestamp: int, data: dict):
+        dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+        db_reading = InfrastructureReadingModel(
+            time=dt,
+            node_id=node_id,
+            flow_rate=data.get("flow_rate"),
+            tank_level=data.get("tank_level"),
+            fertilizer_tank_level=data.get("fertilizer_tank_level"),
+            pump_status=data.get("pump_status"),
+            metadata_json=data.get("metadata_json")
         )
         self.session.add(db_reading)
         await self.session.commit()
