@@ -127,3 +127,27 @@ class KnowledgeEpochResponse(BaseResponse):
 
 class ActiveEpochUpdate(BaseModel):
     epoch_id: int
+
+class ReplayJobCreate(BaseModel):
+    target_epoch_id: int
+    start_telemetry_time: datetime
+    end_telemetry_time: datetime
+
+class ReplayJobResponse(BaseResponse):
+    id: int
+    target_epoch_id: int
+    start_telemetry_time: datetime
+    end_telemetry_time: datetime
+    status: str
+    created_at: datetime
+
+class ReplayResultResponse(BaseResponse):
+    id: int
+    job_id: int
+    telemetry_timestamp: datetime
+    health_score: Optional[int] = None
+    water_stress: Optional[int] = None
+    nutrient_stress: Optional[int] = None
+    risks_count: Optional[int] = None
+    recommendations_count: Optional[int] = None
+    evaluation_payload: Optional[dict] = None

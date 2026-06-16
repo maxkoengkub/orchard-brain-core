@@ -209,3 +209,26 @@ class ActiveEpochPointerModel(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     epoch_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey('knowledge_epochs.id', ondelete='RESTRICT'), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
+
+class ReplayJobModel(Base):
+    __tablename__ = 'replay_jobs'
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    target_epoch_id: Mapped[int] = mapped_column(Integer, ForeignKey('knowledge_epochs.id', ondelete='RESTRICT'), nullable=False)
+    start_telemetry_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_telemetry_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="PENDING")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
+
+class ReplayResultModel(Base):
+    __tablename__ = 'replay_results'
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_id: Mapped[int] = mapped_column(Integer, ForeignKey('replay_jobs.id', ondelete='CASCADE'), nullable=False)
+    telemetry_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    health_score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    water_stress: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    nutrient_stress: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    risks_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    recommendations_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    evaluation_payload: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
