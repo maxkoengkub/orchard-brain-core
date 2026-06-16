@@ -1,11 +1,30 @@
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import Integer, Float, String, DateTime, ForeignKeyConstraint, Boolean, JSON
+from sqlalchemy import Integer, Float, String, DateTime, ForeignKeyConstraint, Boolean, JSON, Enum as SQLAlchemyEnum
 from sqlalchemy.sql import func
 from datetime import datetime
 from typing import Optional
+from enum import Enum
 
 class Base(DeclarativeBase):
     pass
+
+class TrustTier(str, Enum):
+    TIER_1_EMPIRICAL = "TIER_1_EMPIRICAL"
+    TIER_2_PEER_REVIEWED = "TIER_2_PEER_REVIEWED"
+    TIER_3_EXTENSION = "TIER_3_EXTENSION"
+    TIER_4_PRIOR = "TIER_4_PRIOR"
+
+class KnowledgeSourceModel(Base):
+    __tablename__ = 'knowledge_sources'
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_name: Mapped[str] = mapped_column(String(255))
+    source_version: Mapped[str] = mapped_column(String(50))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    trust_tier: Mapped[TrustTier] = mapped_column(SQLAlchemyEnum(TrustTier))
+    metadata_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now(), onupdate=func.now())
 
 class SensorReadingModel(Base):
     __tablename__ = 'sensor_readings'

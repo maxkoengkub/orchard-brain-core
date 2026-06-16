@@ -1,6 +1,7 @@
-from pydantic import BaseModel, ConfigDict
-from typing import Optional, List
+from pydantic import BaseModel, ConfigDict, Field
+from typing import Optional, List, Dict, Any
 from datetime import datetime
+from database.models import TrustTier
 
 class BaseResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -58,3 +59,25 @@ class ConfigurationRequest(BaseModel):
     lora_channel: Optional[int] = None
     tx_power_dbm: Optional[int] = None
     sample_rate_sec: Optional[int] = None
+
+class KnowledgeSourceBase(BaseModel):
+    source_name: str
+    source_version: str
+    trust_tier: TrustTier
+    is_active: bool = True
+    metadata_json: Optional[Dict[str, Any]] = None
+
+class KnowledgeSourceCreate(KnowledgeSourceBase):
+    pass
+
+class KnowledgeSourceUpdate(BaseModel):
+    source_name: Optional[str] = None
+    source_version: Optional[str] = None
+    trust_tier: Optional[TrustTier] = None
+    is_active: Optional[bool] = None
+    metadata_json: Optional[Dict[str, Any]] = None
+
+class KnowledgeSourceResponse(KnowledgeSourceBase, BaseResponse):
+    id: int
+    created_at: datetime
+    updated_at: datetime
