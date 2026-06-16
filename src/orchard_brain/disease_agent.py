@@ -9,6 +9,8 @@ from __future__ import annotations
 from ._agent_base import AgentAssessment
 from ._thresholds import HUMIDITY, PHYTOPHTHORA
 from .orchard_memory import SensorSnapshot, TrendResult
+from .knowledge.threshold_engine import ThresholdMap, PARAM_PHYTOPHTHORA
+from typing import Optional
 
 
 class DiseaseAgent:
@@ -20,6 +22,7 @@ class DiseaseAgent:
         self,
         snapshot: SensorSnapshot,
         trends: list[TrendResult] | None = None,
+        thresholds: Optional[ThresholdMap] = None,
     ) -> AgentAssessment:
         trends = trends or []
         T = snapshot.temperature
@@ -27,17 +30,23 @@ class DiseaseAgent:
 
         risks: list[dict] = []
         recs: list[dict] = []
+        
+        t_bounds = thresholds.get(PARAM_PHYTOPHTHORA, {}) if thresholds else {}
+        opt_lo = t_bounds.get("optimal_min") or PHYTOPHTHORA.temp_favour_low
+        opt_hi = t_bounds.get("optimal_max") or PHYTOPHTHORA.temp_favour_high
+        crit_hi = t_bounds.get("critical_max") or PHYTOPHTHORA.moisture_critical
+        warn_hi = t_bounds.get("warn_max") or PHYTOPHTHORA.moisture_warn
 
-        temp_in_range = PHYTOPHTHORA.temp_favour_low <= T <= PHYTOPHTHORA.temp_favour_high
+        temp_in_range = opt_lo <= T <= opt_hi
         wet_period = any(t.trend == "excessive_wet_period" for t in trends)
 
-        if temp_in_range and sm >= PHYTOPHTHORA.moisture_critical:
-            conf = min(0.97, 0.60 + (sm - PHYTOPHTHORA.moisture_warn) /
-                       (PHYTOPHTHORA.moisture_critical - PHYTOPHTHORA.moisture_warn) * 0.37)
+        if temp_in_range and sm >= crit_hi:
+            conf = min(0.97, 0.60 + (sm - warn_hi) /
+                       (crit_hi - warn_hi) * 0.37)
             risks.append({"risk": "phytophthora_risk", "severity": "critical",
                 "message": (
                     f"Critical P. palmivora risk: T={T:.1f} °C in pathogen range and "
-                    f"soil moisture {sm:.1f} % ≥ {PHYTOPHTHORA.moisture_critical:.0f} %."
+                    f"soil moisture {sm:.1f} % ≥ {crit_hi:.0f} %."
                 )})
             recs.append({"action": "inspect_for_phytophthora", "priority": "critical",
                 "reason": (
@@ -48,9 +57,9 @@ class DiseaseAgent:
                 "reason": "Apply 10-15 cm organic mulch to reduce soil splash and improve drainage.",
                 "confidence": round(conf * 0.90, 2)})
 
-        elif temp_in_range and sm >= PHYTOPHTHORA.moisture_warn:
-            conf = min(0.80, 0.60 + (sm - PHYTOPHTHORA.moisture_warn) /
-                       (PHYTOPHTHORA.moisture_critical - PHYTOPHTHORA.moisture_warn) * 0.20)
+        elif temp_in_range and sm >= warn_hi:
+            conf = min(0.80, 0.60 + (sm - warn_hi) /
+                       (crit_hi - warn_hi) * 0.20)
             risks.append({"risk": "phytophthora_risk", "severity": "warning",
                 "message": (
                     f"P. palmivora-favourable conditions: T={T:.1f} °C + soil moisture {sm:.1f} %."
@@ -73,8 +82,8 @@ class DiseaseAgent:
             reasoning = (
                 f"T={T:.1f} °C, soil moisture={sm:.1f} %. "
                 f"Conditions are outside the critical Phytophthora window "
-                f"({PHYTOPHTHORA.temp_favour_low:.0f}–{PHYTOPHTHORA.temp_favour_high:.0f} °C × "
-                f"≥{PHYTOPHTHORA.moisture_warn:.0f} % VWC). Disease risk is low."
+                f"({opt_lo:.0f}–{opt_hi:.0f} °C × "
+                f"≥{warn_hi:.0f} % VWC). Disease risk is low."
             )
         else:
             reasoning = (

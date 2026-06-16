@@ -30,12 +30,20 @@ Output format per risk item:
 """
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import TypedDict, Optional
 
 from ._thresholds import (
     EC, HUMIDITY, PH, PHYTOPHTHORA, TEMPERATURE, VPD, compute_vpd_kpa,
 )
-
+from .knowledge.threshold_engine import (
+    ThresholdMap,
+    PARAM_TEMPERATURE,
+    PARAM_HUMIDITY,
+    PARAM_EC,
+    PARAM_PH,
+    PARAM_VPD,
+    PARAM_PHYTOPHTHORA
+)
 
 class Risk(TypedDict):
     risk: str
@@ -60,17 +68,18 @@ class RiskAssessment:
         humidity: float,
         ec: float,
         ph: float,
+        thresholds: Optional[ThresholdMap] = None,
     ) -> list[Risk]:
         """Return all active risks for the given sensor readings."""
         vpd = compute_vpd_kpa(temperature, humidity)
 
         risks: list[Risk] = []
-        risks.extend(self._temperature_risks(temperature))
-        risks.extend(self._humidity_risks(humidity))
-        risks.extend(self._ec_risks(ec))
-        risks.extend(self._ph_risks(ph))
-        risks.extend(self._vpd_risks(vpd, temperature, humidity))
-        risks.extend(self._phytophthora_risks(temperature, humidity))
+        risks.extend(self._temperature_risks(temperature, thresholds))
+        risks.extend(self._humidity_risks(humidity, thresholds))
+        risks.extend(self._ec_risks(ec, thresholds))
+        risks.extend(self._ph_risks(ph, thresholds))
+        risks.extend(self._vpd_risks(vpd, temperature, humidity, thresholds))
+        risks.extend(self._phytophthora_risks(temperature, humidity, thresholds))
 
         risks.sort(key=lambda r: (self._SEVERITY_ORDER[r["severity"]], r["risk"]))
         return risks
@@ -78,46 +87,51 @@ class RiskAssessment:
     # ----------------------------------------------------------------- internal
 
     @staticmethod
-    def _temperature_risks(temperature: float) -> list[Risk]:
+    def _temperature_risks(temperature: float, thresholds: Optional[ThresholdMap] = None) -> list[Risk]:
         risks: list[Risk] = []
+        t_bounds = thresholds.get(PARAM_TEMPERATURE, {}) if thresholds else {}
+        crit_hi = t_bounds.get("critical_max") or TEMPERATURE.critical_high
+        warn_hi = t_bounds.get("warn_max") or TEMPERATURE.warn_high
+        crit_lo = t_bounds.get("critical_min") or TEMPERATURE.critical_low
+        warn_lo = t_bounds.get("warn_min") or TEMPERATURE.warn_low
 
-        if temperature >= TEMPERATURE.critical_high:
+        if temperature >= crit_hi:
             risks.append(Risk(
                 risk="heat_stress",
                 severity="critical",
                 message=(
                     f"Temperature {temperature:.1f} °C exceeds critical high "
-                    f"{TEMPERATURE.critical_high:.1f} °C — severe heat damage "
+                    f"{crit_hi:.1f} °C — severe heat damage "
                     "and flower/fruit drop likely (Haifa Guide)."
                 ),
             ))
-        elif temperature >= TEMPERATURE.warn_high:
+        elif temperature >= warn_hi:
             risks.append(Risk(
                 risk="heat_stress",
                 severity="warning",
                 message=(
                     f"Temperature {temperature:.1f} °C exceeds warning high "
-                    f"{TEMPERATURE.warn_high:.1f} °C — heat stress is building; "
+                    f"{warn_hi:.1f} °C — heat stress is building; "
                     "consider cooling measures."
                 ),
             ))
 
-        if temperature <= TEMPERATURE.critical_low:
+        if temperature <= crit_lo:
             risks.append(Risk(
                 risk="cold_stress",
                 severity="critical",
                 message=(
                     f"Temperature {temperature:.1f} °C is at or below critical low "
-                    f"{TEMPERATURE.critical_low:.1f} °C — chilling injury imminent."
+                    f"{crit_lo:.1f} °C — chilling injury imminent."
                 ),
             ))
-        elif temperature <= TEMPERATURE.warn_low:
+        elif temperature <= warn_lo:
             risks.append(Risk(
                 risk="cold_stress",
                 severity="warning",
                 message=(
                     f"Temperature {temperature:.1f} °C is at or below warning low "
-                    f"{TEMPERATURE.warn_low:.1f} °C — growth slowdown and delayed "
+                    f"{warn_lo:.1f} °C — growth slowdown and delayed "
                     "fruiting expected (research: <22 °C stunts durian growth)."
                 ),
             ))
@@ -125,66 +139,73 @@ class RiskAssessment:
         return risks
 
     @staticmethod
-    def _humidity_risks(humidity: float) -> list[Risk]:
+    def _humidity_risks(humidity: float, thresholds: Optional[ThresholdMap] = None) -> list[Risk]:
         risks: list[Risk] = []
+        t_bounds = thresholds.get(PARAM_HUMIDITY, {}) if thresholds else {}
+        crit_hi = t_bounds.get("critical_max") or HUMIDITY.critical_high
+        warn_hi = t_bounds.get("warn_max") or HUMIDITY.warn_high
+        opt_hi = t_bounds.get("optimal_max") or HUMIDITY.optimal_high
+        opt_lo = t_bounds.get("optimal_min") or HUMIDITY.optimal_low
+        warn_lo = t_bounds.get("warn_min") or HUMIDITY.warn_low
+        crit_lo = t_bounds.get("critical_min") or HUMIDITY.critical_low
 
-        if humidity <= HUMIDITY.critical_low:
+        if humidity <= crit_lo:
             risks.append(Risk(
                 risk="drought",
                 severity="critical",
                 message=(
                     f"Soil moisture {humidity:.1f} % is at or below critical low "
-                    f"{HUMIDITY.critical_low:.1f} % — wilting and root collapse imminent."
+                    f"{crit_lo:.1f} % — wilting and root collapse imminent."
                 ),
             ))
-        elif humidity <= HUMIDITY.warn_low:
+        elif humidity <= warn_lo:
             risks.append(Risk(
                 risk="drought",
                 severity="warning",
                 message=(
                     f"Soil moisture {humidity:.1f} % is below warning low "
-                    f"{HUMIDITY.warn_low:.1f} % — severe drought stress; "
+                    f"{warn_lo:.1f} % — severe drought stress; "
                     "irrigation required."
                 ),
             ))
-        elif humidity < HUMIDITY.optimal_low:
+        elif humidity < opt_lo:
             risks.append(Risk(
                 risk="drought",
                 severity="warning",
                 message=(
                     f"Soil moisture {humidity:.1f} % is below optimal minimum "
-                    f"{HUMIDITY.optimal_low:.1f} % VWC — mild moisture deficit "
+                    f"{opt_lo:.1f} % VWC — mild moisture deficit "
                     "(FAO optimal: 40-60 % VWC)."
                 ),
             ))
 
-        if humidity >= HUMIDITY.critical_high:
+        if humidity >= crit_hi:
             risks.append(Risk(
                 risk="waterlogging",
                 severity="critical",
                 message=(
                     f"Soil moisture {humidity:.1f} % is at or above critical high "
-                    f"{HUMIDITY.critical_high:.1f} % — root anaerobia and "
+                    f"{crit_hi:.1f} % — root anaerobia and "
                     "Phytophthora conditions are critical."
                 ),
             ))
-        elif humidity >= HUMIDITY.warn_high:
+        elif humidity >= warn_hi:
             risks.append(Risk(
                 risk="waterlogging",
                 severity="warning",
                 message=(
                     f"Soil moisture {humidity:.1f} % exceeds warning high "
-                    f"{HUMIDITY.warn_high:.1f} % — waterlogging risk; stop "
+                    f"{warn_hi:.1f} % — waterlogging risk; stop "
                     "irrigation and check drainage."
                 ),
             ))
-        elif humidity > HUMIDITY.optimal_high:
+        elif humidity > opt_hi:
             risks.append(Risk(
                 risk="waterlogging",
                 severity="warning",
                 message=(
                     f"Soil moisture {humidity:.1f} % exceeds optimal maximum "
-                    f"{HUMIDITY.optimal_high:.1f} % — monitor for waterlogging "
+                    f"{opt_hi:.1f} % — monitor for waterlogging "
                     "(FAO optimal: 40-60 % VWC)."
                 ),
             ))
@@ -192,127 +213,141 @@ class RiskAssessment:
         return risks
 
     @staticmethod
-    def _ec_risks(ec: float) -> list[Risk]:
+    def _ec_risks(ec: float, thresholds: Optional[ThresholdMap] = None) -> list[Risk]:
         risks: list[Risk] = []
+        t_bounds = thresholds.get(PARAM_EC, {}) if thresholds else {}
+        crit_hi = t_bounds.get("critical_max") or EC.critical_high
+        warn_hi = t_bounds.get("warn_max") or EC.warn_high
+        opt_hi = t_bounds.get("optimal_max") or EC.optimal_high
+        opt_lo = t_bounds.get("optimal_min") or EC.optimal_low
+        warn_lo = t_bounds.get("warn_min") or EC.warn_low
+        crit_lo = t_bounds.get("critical_min") or EC.critical_low
 
-        if ec <= EC.critical_low:
+        if ec <= crit_lo:
             risks.append(Risk(
                 risk="nutrient_deficiency",
                 severity="critical",
                 message=(
                     f"EC {ec:.0f} µS/cm is at or below critical low "
-                    f"{EC.critical_low:.0f} µS/cm — severe nutrient starvation "
+                    f"{crit_lo:.0f} µS/cm — severe nutrient starvation "
                     "(Tang et al., 2024: balanced NPK is critical for yield)."
                 ),
             ))
-        elif ec <= EC.warn_low:
+        elif ec <= warn_lo:
             risks.append(Risk(
                 risk="nutrient_deficiency",
                 severity="warning",
                 message=(
                     f"EC {ec:.0f} µS/cm is below warning low "
-                    f"{EC.warn_low:.0f} µS/cm — nutrient deficiency developing."
+                    f"{warn_lo:.0f} µS/cm — nutrient deficiency developing."
                 ),
             ))
-        elif ec < EC.optimal_low:
+        elif ec < opt_lo:
             risks.append(Risk(
                 risk="nutrient_deficiency",
                 severity="warning",
                 message=(
                     f"EC {ec:.0f} µS/cm is below optimal minimum "
-                    f"{EC.optimal_low:.0f} µS/cm — consider fertigation adjustment."
+                    f"{opt_lo:.0f} µS/cm — consider fertigation adjustment."
                 ),
             ))
 
-        if ec >= EC.critical_high:
+        if ec >= crit_hi:
             risks.append(Risk(
                 risk="nutrient_toxicity",
                 severity="critical",
                 message=(
                     f"EC {ec:.0f} µS/cm is at or above critical high "
-                    f"{EC.critical_high:.0f} µS/cm — salt toxicity causing root burn."
+                    f"{crit_hi:.0f} µS/cm — salt toxicity causing root burn."
                 ),
             ))
-        elif ec >= EC.warn_high:
+        elif ec >= warn_hi:
             risks.append(Risk(
                 risk="nutrient_toxicity",
                 severity="warning",
                 message=(
                     f"EC {ec:.0f} µS/cm exceeds warning high "
-                    f"{EC.warn_high:.0f} µS/cm — salt stress; leaching recommended."
+                    f"{warn_hi:.0f} µS/cm — salt stress; leaching recommended."
                 ),
             ))
-        elif ec > EC.optimal_high:
+        elif ec > opt_hi:
             risks.append(Risk(
                 risk="nutrient_toxicity",
                 severity="warning",
                 message=(
                     f"EC {ec:.0f} µS/cm exceeds optimal maximum "
-                    f"{EC.optimal_high:.0f} µS/cm — monitor salt accumulation."
+                    f"{opt_hi:.0f} µS/cm — monitor salt accumulation."
                 ),
             ))
 
         return risks
 
     @staticmethod
-    def _ph_risks(ph: float) -> list[Risk]:
+    def _ph_risks(ph: float, thresholds: Optional[ThresholdMap] = None) -> list[Risk]:
         """pH risk assessment — research basis: optimal 5.5-6.5 (Ngoc et al., 2024)."""
         risks: list[Risk] = []
+        t_bounds = thresholds.get(PARAM_PH, {}) if thresholds else {}
+        crit_hi = t_bounds.get("critical_max") or PH.critical_high
+        warn_hi = t_bounds.get("warn_max") or PH.warn_high
+        opt_hi = t_bounds.get("optimal_max") or PH.optimal_high
+        opt_lo = t_bounds.get("optimal_min") or PH.optimal_low
+        warn_lo = t_bounds.get("warn_min") or PH.warn_low
+        crit_lo = t_bounds.get("critical_min") or PH.critical_low
 
-        if ph <= PH.critical_low:
+        if ph <= crit_lo:
             risks.append(Risk(
                 risk="ph_acid",
                 severity="critical",
                 message=(
-                    f"pH {ph:.2f} is at or below critical low {PH.critical_low:.1f} "
+                    f"pH {ph:.2f} is at or below critical low {crit_lo:.1f} "
                     "— severe acid toxicity; Ca/Mg/P lock-out imminent."
                 ),
             ))
-        elif ph <= PH.warn_low:
+        elif ph <= warn_lo:
             risks.append(Risk(
                 risk="ph_acid",
                 severity="warning",
                 message=(
-                    f"pH {ph:.2f} is below warning low {PH.warn_low:.1f} "
+                    f"pH {ph:.2f} is below warning low {warn_lo:.1f} "
                     "— Mn/Fe toxicity and P lock-out risk "
                     "(research: pH optimum 5.5-6.5)."
                 ),
             ))
-        elif ph < PH.optimal_low:
+        elif ph < opt_lo:
             risks.append(Risk(
                 risk="ph_acid",
                 severity="warning",
                 message=(
-                    f"pH {ph:.2f} is below optimal minimum {PH.optimal_low:.1f} "
+                    f"pH {ph:.2f} is below optimal minimum {opt_lo:.1f} "
                     "— mild acidic drift; monitor nutrient uptake."
                 ),
             ))
 
-        if ph >= PH.critical_high:
+        if ph >= crit_hi:
             risks.append(Risk(
                 risk="ph_alkaline",
                 severity="critical",
                 message=(
-                    f"pH {ph:.2f} is at or above critical high {PH.critical_high:.1f} "
+                    f"pH {ph:.2f} is at or above critical high {crit_hi:.1f} "
                     "— Fe/Zn/Mn lock-out; urgent pH correction needed."
                 ),
             ))
-        elif ph >= PH.warn_high:
+        elif ph >= warn_hi:
             risks.append(Risk(
                 risk="ph_alkaline",
                 severity="warning",
                 message=(
-                    f"pH {ph:.2f} exceeds warning high {PH.warn_high:.1f} "
+                    f"pH {ph:.2f} exceeds warning high {warn_hi:.1f} "
                     "— alkaline drift reducing micronutrient availability "
                     "(research: optimal upper limit 6.5)."
                 ),
             ))
-        elif ph > PH.optimal_high:
+        elif ph > opt_hi:
             risks.append(Risk(
                 risk="ph_alkaline",
                 severity="warning",
                 message=(
-                    f"pH {ph:.2f} exceeds optimal maximum {PH.optimal_high:.1f} "
+                    f"pH {ph:.2f} exceeds optimal maximum {opt_hi:.1f} "
                     "— early alkaline drift; monitor and apply acidifier if it rises "
                     "(research: durian optimal pH 5.5-6.5)."
                 ),
@@ -321,7 +356,7 @@ class RiskAssessment:
         return risks
 
     @staticmethod
-    def _vpd_risks(vpd: float, temperature: float, humidity: float) -> list[Risk]:
+    def _vpd_risks(vpd: float, temperature: float, humidity: float, thresholds: Optional[ThresholdMap] = None) -> list[Risk]:
         """Vapor Pressure Deficit risks — atmospheric drought demand.
 
         VPD = es × (1 − RH/100), where es is saturation vapor pressure.
@@ -329,25 +364,28 @@ class RiskAssessment:
         increasing transpiration and accelerating soil moisture depletion.
         """
         risks: list[Risk] = []
+        t_bounds = thresholds.get(PARAM_VPD, {}) if thresholds else {}
+        crit_hi = t_bounds.get("critical_max") or VPD.critical_high
+        warn_hi = t_bounds.get("warn_max") or VPD.warn_high
 
-        if vpd >= VPD.critical_high:
+        if vpd >= crit_hi:
             risks.append(Risk(
                 risk="vpd_stress",
                 severity="critical",
                 message=(
                     f"VPD {vpd:.2f} kPa (T={temperature:.1f} °C, "
-                    f"H={humidity:.1f} %) exceeds critical {VPD.critical_high:.1f} kPa "
+                    f"H={humidity:.1f} %) exceeds critical {crit_hi:.1f} kPa "
                     "— severe atmospheric drought demand; stomata closing and "
                     "water uptake is compromised even in moist soil."
                 ),
             ))
-        elif vpd >= VPD.warn_high:
+        elif vpd >= warn_hi:
             risks.append(Risk(
                 risk="vpd_stress",
                 severity="warning",
                 message=(
                     f"VPD {vpd:.2f} kPa (T={temperature:.1f} °C, "
-                    f"H={humidity:.1f} %) exceeds warning {VPD.warn_high:.1f} kPa "
+                    f"H={humidity:.1f} %) exceeds warning {warn_hi:.1f} kPa "
                     "— elevated evaporative demand; water stress building."
                 ),
             ))
@@ -355,7 +393,7 @@ class RiskAssessment:
         return risks
 
     @staticmethod
-    def _phytophthora_risks(temperature: float, humidity: float) -> list[Risk]:
+    def _phytophthora_risks(temperature: float, humidity: float, thresholds: Optional[ThresholdMap] = None) -> list[Risk]:
         """Phytophthora palmivora disease risk.
 
         Research (Guest & Drenth, 2004): P. palmivora thrives in warm (25-35 °C),
@@ -363,28 +401,33 @@ class RiskAssessment:
         We detect the environment (temperature × soil moisture) as a proxy.
         """
         risks: list[Risk] = []
+        t_bounds = thresholds.get(PARAM_PHYTOPHTHORA, {}) if thresholds else {}
+        opt_lo = t_bounds.get("optimal_min") or PHYTOPHTHORA.temp_favour_low
+        opt_hi = t_bounds.get("optimal_max") or PHYTOPHTHORA.temp_favour_high
+        crit_hi = t_bounds.get("critical_max") or PHYTOPHTHORA.moisture_critical
+        warn_hi = t_bounds.get("warn_max") or PHYTOPHTHORA.moisture_warn
 
-        temp_in_range = PHYTOPHTHORA.temp_favour_low <= temperature <= PHYTOPHTHORA.temp_favour_high
+        temp_in_range = opt_lo <= temperature <= opt_hi
 
-        if temp_in_range and humidity >= PHYTOPHTHORA.moisture_critical:
+        if temp_in_range and humidity >= crit_hi:
             risks.append(Risk(
                 risk="phytophthora_risk",
                 severity="critical",
                 message=(
                     f"Critical Phytophthora risk: T={temperature:.1f} °C in pathogen "
                     f"optimal range and soil moisture {humidity:.1f} % ≥ critical wet "
-                    f"threshold {PHYTOPHTHORA.moisture_critical:.0f} %. "
+                    f"threshold {crit_hi:.0f} %. "
                     "Inspect trees for root/stem canker; apply fungicide preventatively "
                     "(Guest & Drenth, 2004)."
                 ),
             ))
-        elif temp_in_range and humidity >= PHYTOPHTHORA.moisture_warn:
+        elif temp_in_range and humidity >= warn_hi:
             risks.append(Risk(
                 risk="phytophthora_risk",
                 severity="warning",
                 message=(
                     f"Phytophthora-favourable conditions: T={temperature:.1f} °C and "
-                    f"soil moisture {humidity:.1f} % ≥ {PHYTOPHTHORA.moisture_warn:.0f} %. "
+                    f"soil moisture {humidity:.1f} % ≥ {warn_hi:.0f} %. "
                     "Improve drainage and apply preventative mulch to reduce infection risk."
                 ),
             ))

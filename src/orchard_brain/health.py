@@ -44,8 +44,16 @@ RiskAssessment and priority-boosting in RecommendationEngine.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 from ._thresholds import EC, HUMIDITY, PH, TEMPERATURE, compute_vpd_kpa
+from .knowledge.threshold_engine import (
+    ThresholdMap,
+    PARAM_TEMPERATURE,
+    PARAM_HUMIDITY,
+    PARAM_EC,
+    PARAM_PH
+)
 
 
 def _clamp(value: float, lo: float = 0.0, hi: float = 100.0) -> float:
@@ -91,11 +99,12 @@ class HealthAssessment:
         humidity: float,
         ec: float,
         ph: float,
+        thresholds: Optional[ThresholdMap] = None,
     ) -> HealthResult:
         """Return health metrics for the given sensor reading."""
-        water_stress_raw = self._compute_water_stress(humidity)
-        nutrient_stress_raw = self._compute_nutrient_stress(ec, ph)
-        temperature_score_raw = self._compute_temperature_score(temperature)
+        water_stress_raw = self._compute_water_stress(humidity, thresholds)
+        nutrient_stress_raw = self._compute_nutrient_stress(ec, ph, thresholds)
+        temperature_score_raw = self._compute_temperature_score(temperature, thresholds)
         vpd = compute_vpd_kpa(temperature, humidity)
 
         water_score = 100.0 - water_stress_raw
@@ -120,10 +129,11 @@ class HealthAssessment:
 
     # ----------------------------------------------------------------- internal
 
-    def _compute_water_stress(self, humidity: float) -> float:
+    def _compute_water_stress(self, humidity: float, thresholds: Optional[ThresholdMap]) -> float:
         """Return water stress 0–100 (higher = worse)."""
-        opt_lo = HUMIDITY.optimal_low
-        opt_hi = HUMIDITY.optimal_high
+        t_bounds = thresholds.get(PARAM_HUMIDITY, {}) if thresholds else {}
+        opt_lo = t_bounds.get("optimal_min") or HUMIDITY.optimal_low
+        opt_hi = t_bounds.get("optimal_max") or HUMIDITY.optimal_high
 
         if humidity < opt_lo:
             # Drought: linear from 0 stress at opt_lo to 100 stress at 0 %
@@ -135,19 +145,20 @@ class HealthAssessment:
 
         return 0.0
 
-    def _compute_nutrient_stress(self, ec: float, ph: float) -> float:
+    def _compute_nutrient_stress(self, ec: float, ph: float, thresholds: Optional[ThresholdMap]) -> float:
         """Return nutrient stress 0–100 (higher = worse).
 
         EC contributes up to 70 points; pH contributes up to 30 points.
         The sum is clamped to [0, 100].
         """
-        ec_contribution = self._ec_component(ec)
-        ph_contribution = self._ph_component(ph)
+        ec_contribution = self._ec_component(ec, thresholds)
+        ph_contribution = self._ph_component(ph, thresholds)
         return _clamp(ec_contribution + ph_contribution)
 
-    def _ec_component(self, ec: float) -> float:
-        opt_lo = EC.optimal_low
-        opt_hi = EC.optimal_high
+    def _ec_component(self, ec: float, thresholds: Optional[ThresholdMap]) -> float:
+        t_bounds = thresholds.get(PARAM_EC, {}) if thresholds else {}
+        opt_lo = t_bounds.get("optimal_min") or EC.optimal_low
+        opt_hi = t_bounds.get("optimal_max") or EC.optimal_high
         max_c = self._EC_MAX_CONTRIBUTION
 
         if ec < opt_lo:
@@ -158,9 +169,10 @@ class HealthAssessment:
 
         return 0.0
 
-    def _ph_component(self, ph: float) -> float:
-        opt_lo = PH.optimal_low
-        opt_hi = PH.optimal_high
+    def _ph_component(self, ph: float, thresholds: Optional[ThresholdMap]) -> float:
+        t_bounds = thresholds.get(PARAM_PH, {}) if thresholds else {}
+        opt_lo = t_bounds.get("optimal_min") or PH.optimal_low
+        opt_hi = t_bounds.get("optimal_max") or PH.optimal_high
         max_c = self._PH_MAX_CONTRIBUTION
 
         if ph < opt_lo:
@@ -171,10 +183,11 @@ class HealthAssessment:
 
         return 0.0
 
-    def _compute_temperature_score(self, temperature: float) -> float:
+    def _compute_temperature_score(self, temperature: float, thresholds: Optional[ThresholdMap]) -> float:
         """Return temperature sub-score 0–100 (100 = perfectly optimal)."""
-        opt_lo = TEMPERATURE.optimal_low
-        opt_hi = TEMPERATURE.optimal_high
+        t_bounds = thresholds.get(PARAM_TEMPERATURE, {}) if thresholds else {}
+        opt_lo = t_bounds.get("optimal_min") or TEMPERATURE.optimal_low
+        opt_hi = t_bounds.get("optimal_max") or TEMPERATURE.optimal_high
 
         if opt_lo <= temperature <= opt_hi:
             return 100.0

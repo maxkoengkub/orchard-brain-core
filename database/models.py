@@ -1,5 +1,6 @@
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy import Integer, Float, String, DateTime, ForeignKeyConstraint, ForeignKey, Boolean, JSON, Enum as SQLAlchemyEnum
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from datetime import datetime
 from typing import Optional

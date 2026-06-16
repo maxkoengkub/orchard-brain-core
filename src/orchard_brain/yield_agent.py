@@ -11,9 +11,20 @@ Yield potential is rated on a 0-100 index derived from:
 """
 from __future__ import annotations
 
+from typing import Optional
+
 from ._agent_base import AgentAssessment
 from ._thresholds import EC, HUMIDITY, PH, PHYTOPHTHORA, TEMPERATURE, VPD, compute_vpd_kpa
 from .orchard_memory import SensorSnapshot, TrendResult
+from .knowledge.threshold_engine import (
+    ThresholdMap,
+    PARAM_TEMPERATURE,
+    PARAM_HUMIDITY,
+    PARAM_EC,
+    PARAM_PH,
+    PARAM_VPD,
+    PARAM_PHYTOPHTHORA
+)
 
 
 class YieldAgent:
@@ -31,6 +42,7 @@ class YieldAgent:
         self,
         snapshot: SensorSnapshot,
         trends: list[TrendResult] | None = None,
+        thresholds: Optional[ThresholdMap] = None,
     ) -> AgentAssessment:
         trends = trends or []
         T = snapshot.temperature
@@ -40,10 +52,10 @@ class YieldAgent:
         vpd = snapshot.vpd or compute_vpd_kpa(T, snapshot.humidity)
 
         # ── component scores (0–100)
-        temp_score = self._temperature_score(T)
-        water_score = self._water_score(sm, vpd)
-        nutrient_score = self._nutrient_score(ec, ph)
-        disease_score = self._disease_score(T, sm)
+        temp_score = self._temperature_score(T, thresholds)
+        water_score = self._water_score(sm, vpd, thresholds)
+        nutrient_score = self._nutrient_score(ec, ph, thresholds)
+        disease_score = self._disease_score(T, sm, thresholds)
 
         yield_potential = round(
             temp_score    * self._W_TEMP
@@ -128,16 +140,26 @@ class YieldAgent:
 
     # ──────────────────────────────────────── component scorers
 
-    def _temperature_score(self, T: float) -> float:
-        opt_lo, opt_hi = TEMPERATURE.optimal_low, TEMPERATURE.optimal_high
+    def _temperature_score(self, T: float, thresholds: Optional[ThresholdMap] = None) -> float:
+        t_bounds = thresholds.get(PARAM_TEMPERATURE, {}) if thresholds else {}
+        opt_lo = t_bounds.get("optimal_min") or TEMPERATURE.optimal_low
+        opt_hi = t_bounds.get("optimal_max") or TEMPERATURE.optimal_high
+
         if opt_lo <= T <= opt_hi:
             return 100.0
         if T < opt_lo:
             return max(0.0, 100.0 - (opt_lo - T) * 8.0)
         return max(0.0, 100.0 - (T - opt_hi) * 12.0)
 
-    def _water_score(self, sm: float, vpd: float) -> float:
-        opt_lo, opt_hi = HUMIDITY.optimal_low, HUMIDITY.optimal_high
+    def _water_score(self, sm: float, vpd: float, thresholds: Optional[ThresholdMap] = None) -> float:
+        t_bounds_h = thresholds.get(PARAM_HUMIDITY, {}) if thresholds else {}
+        opt_lo = t_bounds_h.get("optimal_min") or HUMIDITY.optimal_low
+        opt_hi = t_bounds_h.get("optimal_max") or HUMIDITY.optimal_high
+
+        t_bounds_v = thresholds.get(PARAM_VPD, {}) if thresholds else {}
+        v_crit_hi = t_bounds_v.get("critical_max") or VPD.critical_high
+        v_warn_hi = t_bounds_v.get("warn_max") or VPD.warn_high
+
         if opt_lo <= sm <= opt_hi:
             base = 100.0
         elif sm < opt_lo:
@@ -145,40 +167,54 @@ class YieldAgent:
         else:
             base = max(0.0, 100.0 - (sm - opt_hi) / (100.0 - opt_hi) * 100.0)
         # VPD penalty (compare kPa against VPD thresholds, not temperature thresholds)
-        if vpd >= VPD.critical_high:
+        if vpd >= v_crit_hi:
             base *= 0.5
-        elif vpd >= VPD.warn_high:
+        elif vpd >= v_warn_hi:
             base *= 0.75
         return base
 
-    def _nutrient_score(self, ec: float, ph: float) -> float:
-        ec_ok = EC.optimal_low <= ec <= EC.optimal_high
-        ph_ok = PH.optimal_low <= ph <= PH.optimal_high
+    def _nutrient_score(self, ec: float, ph: float, thresholds: Optional[ThresholdMap] = None) -> float:
+        t_bounds_ec = thresholds.get(PARAM_EC, {}) if thresholds else {}
+        ec_opt_lo = t_bounds_ec.get("optimal_min") or EC.optimal_low
+        ec_opt_hi = t_bounds_ec.get("optimal_max") or EC.optimal_high
+
+        t_bounds_ph = thresholds.get(PARAM_PH, {}) if thresholds else {}
+        ph_opt_lo = t_bounds_ph.get("optimal_min") or PH.optimal_low
+        ph_opt_hi = t_bounds_ph.get("optimal_max") or PH.optimal_high
+
+        ec_ok = ec_opt_lo <= ec <= ec_opt_hi
+        ph_ok = ph_opt_lo <= ph <= ph_opt_hi
 
         ec_score = 100.0
-        if ec < EC.optimal_low:
-            ec_score = max(0.0, 100.0 - (EC.optimal_low - ec) / EC.optimal_low * 70.0)
-        elif ec > EC.optimal_high:
-            ec_score = max(0.0, 100.0 - (ec - EC.optimal_high) / EC.optimal_high * 70.0)
+        if ec < ec_opt_lo:
+            ec_score = max(0.0, 100.0 - (ec_opt_lo - ec) / ec_opt_lo * 70.0)
+        elif ec > ec_opt_hi:
+            ec_score = max(0.0, 100.0 - (ec - ec_opt_hi) / ec_opt_hi * 70.0)
 
         ph_score = 100.0
-        if ph < PH.optimal_low:
-            ph_score = max(0.0, 100.0 - (PH.optimal_low - ph) / PH.optimal_low * 30.0)
-        elif ph > PH.optimal_high:
-            ph_score = max(0.0, 100.0 - (ph - PH.optimal_high) / (14.0 - PH.optimal_high) * 30.0)
+        if ph < ph_opt_lo:
+            ph_score = max(0.0, 100.0 - (ph_opt_lo - ph) / ph_opt_lo * 30.0)
+        elif ph > ph_opt_hi:
+            ph_score = max(0.0, 100.0 - (ph - ph_opt_hi) / (14.0 - ph_opt_hi) * 30.0)
 
         return (ec_score * 0.6 + ph_score * 0.4)
 
-    def _disease_score(self, T: float, sm: float) -> float:
+    def _disease_score(self, T: float, sm: float, thresholds: Optional[ThresholdMap] = None) -> float:
         """100 = no disease pressure; lower = higher Phytophthora risk."""
-        in_range = PHYTOPHTHORA.temp_favour_low <= T <= PHYTOPHTHORA.temp_favour_high
+        t_bounds = thresholds.get(PARAM_PHYTOPHTHORA, {}) if thresholds else {}
+        opt_lo = t_bounds.get("optimal_min") or PHYTOPHTHORA.temp_favour_low
+        opt_hi = t_bounds.get("optimal_max") or PHYTOPHTHORA.temp_favour_high
+        crit_hi = t_bounds.get("critical_max") or PHYTOPHTHORA.moisture_critical
+        warn_hi = t_bounds.get("warn_max") or PHYTOPHTHORA.moisture_warn
+
+        in_range = opt_lo <= T <= opt_hi
         if not in_range:
             return 100.0
-        if sm >= PHYTOPHTHORA.moisture_critical:
+        if sm >= crit_hi:
             return 20.0
-        if sm >= PHYTOPHTHORA.moisture_warn:
-            ratio = (sm - PHYTOPHTHORA.moisture_warn) / (
-                PHYTOPHTHORA.moisture_critical - PHYTOPHTHORA.moisture_warn
+        if sm >= warn_hi:
+            ratio = (sm - warn_hi) / (
+                crit_hi - warn_hi
             )
             return 100.0 - ratio * 80.0
         return 100.0

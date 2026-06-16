@@ -8,6 +8,8 @@ from __future__ import annotations
 from ._agent_base import AgentAssessment
 from ._thresholds import EC, PH
 from .orchard_memory import SensorSnapshot, TrendResult
+from .knowledge.threshold_engine import ThresholdMap, PARAM_PH, PARAM_EC
+from typing import Optional
 
 
 class NutritionAgent:
@@ -19,6 +21,7 @@ class NutritionAgent:
         self,
         snapshot: SensorSnapshot,
         trends: list[TrendResult] | None = None,
+        thresholds: Optional[ThresholdMap] = None,
     ) -> AgentAssessment:
         trends = trends or []
         ph = snapshot.ph
@@ -26,81 +29,97 @@ class NutritionAgent:
 
         risks: list[dict] = []
         recs: list[dict] = []
+        
+        t_bounds_ph = thresholds.get(PARAM_PH, {}) if thresholds else {}
+        ph_crit_hi = t_bounds_ph.get("critical_max") or PH.critical_high
+        ph_warn_hi = t_bounds_ph.get("warn_max") or PH.warn_high
+        ph_opt_hi = t_bounds_ph.get("optimal_max") or PH.optimal_high
+        ph_opt_lo = t_bounds_ph.get("optimal_min") or PH.optimal_low
+        ph_warn_lo = t_bounds_ph.get("warn_min") or PH.warn_low
+        ph_crit_lo = t_bounds_ph.get("critical_min") or PH.critical_low
+
+        t_bounds_ec = thresholds.get(PARAM_EC, {}) if thresholds else {}
+        ec_crit_hi = t_bounds_ec.get("critical_max") or EC.critical_high
+        ec_warn_hi = t_bounds_ec.get("warn_max") or EC.warn_high
+        ec_opt_hi = t_bounds_ec.get("optimal_max") or EC.optimal_high
+        ec_opt_lo = t_bounds_ec.get("optimal_min") or EC.optimal_low
+        ec_warn_lo = t_bounds_ec.get("warn_min") or EC.warn_low
+        ec_crit_lo = t_bounds_ec.get("critical_min") or EC.critical_low
 
         # ── pH risks (research: optimal 5.5-6.5; Ngoc et al., 2024)
-        if ph <= PH.critical_low:
+        if ph <= ph_crit_lo:
             risks.append({"risk": "ph_acid", "severity": "critical",
-                "message": f"pH {ph:.2f} ≤ critical low {PH.critical_low:.1f} — toxic acidity."})
+                "message": f"pH {ph:.2f} ≤ critical low {ph_crit_lo:.1f} — toxic acidity."})
             recs.append({"action": "apply_lime_to_raise_ph", "priority": "critical",
                 "reason": "Apply agricultural lime immediately to prevent Ca/Mg/P lock-out.",
-                "confidence": _conf(ph, PH.warn_low, PH.critical_low)})
-        elif ph <= PH.warn_low:
+                "confidence": _conf(ph, ph_warn_lo, ph_crit_lo)})
+        elif ph <= ph_warn_lo:
             risks.append({"risk": "ph_acid", "severity": "warning",
-                "message": f"pH {ph:.2f} below warning {PH.warn_low:.1f}."})
+                "message": f"pH {ph:.2f} below warning {ph_warn_lo:.1f}."})
             recs.append({"action": "apply_lime_to_raise_ph", "priority": "high",
                 "reason": f"pH {ph:.2f} below safe range; apply lime to return to 5.5-6.5.",
-                "confidence": _conf(ph, PH.warn_low, PH.critical_low)})
-        elif ph < PH.optimal_low:
+                "confidence": _conf(ph, ph_warn_lo, ph_crit_lo)})
+        elif ph < ph_opt_lo:
             risks.append({"risk": "ph_acid", "severity": "warning",
-                "message": f"pH {ph:.2f} below optimal minimum {PH.optimal_low:.1f}."})
+                "message": f"pH {ph:.2f} below optimal minimum {ph_opt_lo:.1f}."})
             recs.append({"action": "apply_lime_to_raise_ph", "priority": "medium",
                 "reason": f"pH {ph:.2f} is mildly acidic; schedule lime application.",
                 "confidence": 0.62})
 
-        if ph >= PH.critical_high:
+        if ph >= ph_crit_hi:
             risks.append({"risk": "ph_alkaline", "severity": "critical",
-                "message": f"pH {ph:.2f} ≥ critical high {PH.critical_high:.1f} — micronutrient lock-out."})
+                "message": f"pH {ph:.2f} ≥ critical high {ph_crit_hi:.1f} — micronutrient lock-out."})
             recs.append({"action": "apply_sulfur_to_lower_ph", "priority": "critical",
                 "reason": "Apply elemental sulfur urgently — Fe/Zn/Mn completely unavailable.",
-                "confidence": _conf(ph, PH.warn_high, PH.critical_high)})
-        elif ph >= PH.warn_high:
+                "confidence": _conf(ph, ph_warn_hi, ph_crit_hi)})
+        elif ph >= ph_warn_hi:
             risks.append({"risk": "ph_alkaline", "severity": "warning",
-                "message": f"pH {ph:.2f} above warning high {PH.warn_high:.1f} (optimal ≤6.5)."})
+                "message": f"pH {ph:.2f} above warning high {ph_warn_hi:.1f} (optimal ≤6.5)."})
             recs.append({"action": "apply_sulfur_to_lower_ph", "priority": "high",
                 "reason": f"pH {ph:.2f} exceeds optimal; apply acidifier to return to 5.5-6.5.",
-                "confidence": _conf(ph, PH.warn_high, PH.critical_high)})
-        elif ph > PH.optimal_high:
+                "confidence": _conf(ph, ph_warn_hi, ph_crit_hi)})
+        elif ph > ph_opt_hi:
             risks.append({"risk": "ph_alkaline", "severity": "warning",
-                "message": f"pH {ph:.2f} slightly above optimal {PH.optimal_high:.1f}."})
+                "message": f"pH {ph:.2f} slightly above optimal {ph_opt_hi:.1f}."})
             recs.append({"action": "apply_sulfur_to_lower_ph", "priority": "medium",
                 "reason": f"pH {ph:.2f} is drifting alkaline; monitor and plan acidification.",
                 "confidence": 0.62})
 
         # ── EC risks
-        if ec <= EC.critical_low:
+        if ec <= ec_crit_lo:
             risks.append({"risk": "nutrient_deficiency", "severity": "critical",
-                "message": f"EC {ec:.0f} µS/cm ≤ critical low {EC.critical_low:.0f} — severe starvation."})
+                "message": f"EC {ec:.0f} µS/cm ≤ critical low {ec_crit_lo:.0f} — severe starvation."})
             recs.append({"action": "adjust_fertigation_ratio_to_high_pk", "priority": "critical",
                 "reason": "Apply high-PK fertigation immediately (Tang et al., 2024).",
-                "confidence": _conf(ec, EC.warn_low, EC.critical_low)})
-        elif ec <= EC.warn_low:
+                "confidence": _conf(ec, ec_warn_lo, ec_crit_lo)})
+        elif ec <= ec_warn_lo:
             risks.append({"risk": "nutrient_deficiency", "severity": "warning",
-                "message": f"EC {ec:.0f} µS/cm below warning {EC.warn_low:.0f}."})
+                "message": f"EC {ec:.0f} µS/cm below warning {ec_warn_lo:.0f}."})
             recs.append({"action": "adjust_fertigation_ratio_to_high_pk", "priority": "high",
                 "reason": f"EC {ec:.0f} µS/cm indicates dilute nutrient solution; increase fertigation.",
-                "confidence": _conf(ec, EC.warn_low, EC.critical_low)})
-        elif ec < EC.optimal_low:
+                "confidence": _conf(ec, ec_warn_lo, ec_crit_lo)})
+        elif ec < ec_opt_lo:
             risks.append({"risk": "nutrient_deficiency", "severity": "warning",
-                "message": f"EC {ec:.0f} µS/cm below optimal {EC.optimal_low:.0f}."})
+                "message": f"EC {ec:.0f} µS/cm below optimal {ec_opt_lo:.0f}."})
             recs.append({"action": "adjust_fertigation_ratio_to_high_pk", "priority": "medium",
                 "reason": f"EC {ec:.0f} µS/cm is sub-optimal; light fertigation boost recommended.",
                 "confidence": 0.62})
 
-        if ec >= EC.critical_high:
+        if ec >= ec_crit_hi:
             risks.append({"risk": "nutrient_toxicity", "severity": "critical",
-                "message": f"EC {ec:.0f} µS/cm ≥ critical high {EC.critical_high:.0f} — root burn."})
+                "message": f"EC {ec:.0f} µS/cm ≥ critical high {ec_crit_hi:.0f} — root burn."})
             recs.append({"action": "flush_irrigation_to_reduce_ec", "priority": "critical",
                 "reason": "Flush root zone with clean water immediately to prevent salt toxicity.",
-                "confidence": _conf(ec, EC.warn_high, EC.critical_high)})
-        elif ec >= EC.warn_high:
+                "confidence": _conf(ec, ec_warn_hi, ec_crit_hi)})
+        elif ec >= ec_warn_hi:
             risks.append({"risk": "nutrient_toxicity", "severity": "warning",
-                "message": f"EC {ec:.0f} µS/cm exceeds warning {EC.warn_high:.0f}."})
+                "message": f"EC {ec:.0f} µS/cm exceeds warning {ec_warn_hi:.0f}."})
             recs.append({"action": "flush_irrigation_to_reduce_ec", "priority": "high",
                 "reason": f"EC {ec:.0f} µS/cm is elevated; leaching irrigation cycle needed.",
-                "confidence": _conf(ec, EC.warn_high, EC.critical_high)})
-        elif ec > EC.optimal_high:
+                "confidence": _conf(ec, ec_warn_hi, ec_crit_hi)})
+        elif ec > ec_opt_hi:
             risks.append({"risk": "nutrient_toxicity", "severity": "warning",
-                "message": f"EC {ec:.0f} µS/cm slightly above optimal {EC.optimal_high:.0f}."})
+                "message": f"EC {ec:.0f} µS/cm slightly above optimal {ec_opt_hi:.0f}."})
             recs.append({"action": "flush_irrigation_to_reduce_ec", "priority": "low",
                 "reason": f"EC {ec:.0f} µS/cm is slightly high; reduce fertigation concentration.",
                 "confidence": 0.62})
@@ -109,8 +128,8 @@ class NutritionAgent:
         confidence = max((r["confidence"] for r in recs), default=0.0)
 
         reasoning = (
-            f"Soil pH is {ph:.2f} (optimal: {PH.optimal_low:.1f}-{PH.optimal_high:.1f}). "
-            f"Fertigation EC is {ec:.0f} µS/cm (optimal: {EC.optimal_low:.0f}-{EC.optimal_high:.0f} µS/cm). "
+            f"Soil pH is {ph:.2f} (optimal: {ph_opt_lo:.1f}-{ph_opt_hi:.1f}). "
+            f"Fertigation EC is {ec:.0f} µS/cm (optimal: {ec_opt_lo:.0f}-{ec_opt_hi:.0f} µS/cm). "
         )
         reasoning += (
             "All nutrient parameters are within optimal ranges — no adjustments needed."

@@ -53,6 +53,9 @@ from .orchard_orchestrator import OrchardOrchestrator, OrchestratorResult
 from .orchard_report import OrchardReport
 from .recommendation import Recommendation, RecommendationEngine
 from .risk import Risk, RiskAssessment
+from .knowledge.threshold_engine import ThresholdEngine, ThresholdMap
+from database.config import AsyncSessionLocal
+from database.threshold_repository import ThresholdRepository
 
 
 class BrainResult(TypedDict):
@@ -84,12 +87,13 @@ class OrchardBrain:
 
     # ──────────────────────────────────────────────── original API (unchanged)
 
-    def evaluate(self, reading: Any) -> BrainResult:
+    def evaluate(self, reading: Any, thresholds: Optional[ThresholdMap] = None) -> BrainResult:
         """Evaluate a ``SensorReading`` (or any compatible object).
 
         Args:
             reading: Object exposing ``.temperature``, ``.humidity``,
                      ``.ec``, and ``.ph`` as floats.
+            thresholds: Optional pre-resolved thresholds.
 
         Returns:
             ``BrainResult`` dict — JSON-serialisable with no extra work.
@@ -99,7 +103,17 @@ class OrchardBrain:
             humidity=float(reading.humidity),
             ec=float(reading.ec),
             ph=float(reading.ph),
+            thresholds=thresholds
         )
+
+    async def evaluate_async(self, reading: Any, epoch_id: Optional[int] = None) -> BrainResult:
+        """Async entry point. Resolves dynamic thresholds before synchronous execution."""
+        async with AsyncSessionLocal() as session:
+            repo = ThresholdRepository(session)
+            engine = ThresholdEngine(repo)
+            thresholds = await engine.get_all_thresholds(epoch_id)
+        
+        return self.evaluate(reading, thresholds=thresholds)
 
     def evaluate_raw(
         self,
@@ -107,18 +121,20 @@ class OrchardBrain:
         humidity: float,
         ec: float,
         ph: float,
+        thresholds: Optional[ThresholdMap] = None,
     ) -> BrainResult:
         """Evaluate raw sensor values directly.
 
         Useful for testing, CLI tools, or callers that do not construct
         a ``SensorReading`` object.
         """
-        health: HealthResult = self._health.assess(temperature, humidity, ec, ph)
-        risks: list[Risk] = self._risk.assess(temperature, humidity, ec, ph)
+        health: HealthResult = self._health.assess(temperature, humidity, ec, ph, thresholds=thresholds)
+        risks: list[Risk] = self._risk.assess(temperature, humidity, ec, ph, thresholds=thresholds)
         recs: list[Recommendation] = self._rec.recommend(
             temperature, humidity, ec, ph,
             health_result=health,
             risks=risks,
+            thresholds=thresholds,
         )
 
         return BrainResult(
@@ -135,6 +151,7 @@ class OrchardBrain:
         self,
         reading: Any,
         memory: Optional[OrchardMemory] = None,
+        thresholds: Optional[ThresholdMap] = None,
     ) -> OrchestratorResult:
         """Run the full multi-agent intelligence pipeline.
 
@@ -147,18 +164,29 @@ class OrchardBrain:
             memory  : Optional external OrchardMemory instance.  If None, uses
                       the instance's internal memory (if enable_memory=True) or
                       creates a single-shot memory for this call.
+            thresholds: Optional pre-resolved thresholds.
 
         Returns:
             ``OrchestratorResult`` — structured output of all agents and modules.
         """
         snapshot = SensorSnapshot.from_reading(reading)
         mem = memory or self._memory
-        return self._orchestrator.run(snapshot, memory=mem)
+        return self._orchestrator.run(snapshot, memory=mem, thresholds=thresholds)
+
+    async def evaluate_orchestrated_async(self, reading: Any, epoch_id: Optional[int] = None) -> OrchestratorResult:
+        """Async entry point for full pipeline. Resolves dynamic thresholds before synchronous execution."""
+        async with AsyncSessionLocal() as session:
+            repo = ThresholdRepository(session)
+            engine = ThresholdEngine(repo)
+            thresholds = await engine.get_all_thresholds(epoch_id)
+            
+        return self.evaluate_orchestrated(reading, thresholds=thresholds)
 
     def evaluate_full(
         self,
         reading: Any,
         memory: Optional[OrchardMemory] = None,
+        thresholds: Optional[ThresholdMap] = None,
     ) -> str:
         """Run the full pipeline and return a human-readable report string.
 
@@ -174,6 +202,7 @@ class OrchardBrain:
         Args:
             reading : Object with .temperature, .humidity, .ec, .ph attributes.
             memory  : Optional external ``OrchardMemory``.
+            thresholds: Optional pre-resolved thresholds.
 
         Returns:
             Multi-line report string — suitable for logging, email alerts, or
@@ -184,10 +213,10 @@ class OrchardBrain:
 
         # Run health assessment for the report header
         health = self._health.assess(
-            reading.temperature, reading.humidity, reading.ec, reading.ph
+            reading.temperature, reading.humidity, reading.ec, reading.ph, thresholds=thresholds
         )
 
-        orch_result = self._orchestrator.run(snapshot, memory=mem)
+        orch_result = self._orchestrator.run(snapshot, memory=mem, thresholds=thresholds)
         return self._report_gen.generate(orch_result, health_result=health)
 
     def evaluate_full_raw(
@@ -197,6 +226,7 @@ class OrchardBrain:
         ec: float,
         ph: float,
         memory: Optional[OrchardMemory] = None,
+        thresholds: Optional[ThresholdMap] = None,
     ) -> str:
         """Full pipeline accepting raw floats — same as evaluate_full() but
         without a SensorReading object (useful for testing)."""
@@ -209,4 +239,4 @@ class OrchardBrain:
         r.humidity = humidity
         r.ec = ec
         r.ph = ph
-        return self.evaluate_full(r, memory=memory)
+        return self.evaluate_full(r, memory=memory, thresholds=thresholds)

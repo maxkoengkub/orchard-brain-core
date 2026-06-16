@@ -17,6 +17,8 @@ from .orchard_graph import OrchardGraph
 from .orchard_memory import OrchardMemory, SensorSnapshot, TrendResult
 from .water_agent import WaterAgent
 from .yield_agent import YieldAgent
+from .knowledge.threshold_engine import ThresholdMap
+from typing import Optional
 
 
 @dataclass
@@ -60,6 +62,7 @@ class OrchardOrchestrator:
         self,
         snapshot: SensorSnapshot,
         memory: OrchardMemory | None = None,
+        thresholds: Optional[ThresholdMap] = None,
     ) -> OrchestratorResult:
         """Execute the full pipeline and return an OrchestratorResult."""
 
@@ -72,11 +75,11 @@ class OrchardOrchestrator:
 
         # 2. Run all agents
         assessments: list[AgentAssessment] = [
-            self._water.assess(snapshot, trends),
-            self._disease.assess(snapshot, trends),
-            self._nutrition.assess(snapshot, trends),
-            self._flowering.assess(snapshot, trends),
-            self._yield.assess(snapshot, trends),
+            self._water.assess(snapshot, trends, thresholds),
+            self._disease.assess(snapshot, trends, thresholds),
+            self._nutrition.assess(snapshot, trends, thresholds),
+            self._flowering.assess(snapshot, trends, thresholds),
+            self._yield.assess(snapshot, trends, thresholds),
         ]
 
         # 3. Build causal chains

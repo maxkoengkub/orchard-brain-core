@@ -43,13 +43,22 @@ Design rules
 """
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import TypedDict, Optional
 
 from ._thresholds import (
     EC, HUMIDITY, PH, PHYTOPHTHORA, TEMPERATURE, VPD, compute_vpd_kpa,
 )
 from .health import HealthResult
 from .risk import Risk
+from .knowledge.threshold_engine import (
+    ThresholdMap,
+    PARAM_TEMPERATURE,
+    PARAM_HUMIDITY,
+    PARAM_EC,
+    PARAM_PH,
+    PARAM_VPD,
+    PARAM_PHYTOPHTHORA
+)
 
 
 class Recommendation(TypedDict):
@@ -96,18 +105,19 @@ class RecommendationEngine:
         ph: float,
         health_result: HealthResult | None = None,
         risks: list[Risk] | None = None,
+        thresholds: Optional[ThresholdMap] = None,
     ) -> list[Recommendation]:
         """Return a deduplicated, priority-sorted list of recommendations."""
         vpd = compute_vpd_kpa(temperature, humidity)
 
         recs: list[Recommendation] = []
-        recs.extend(self._temperature_recommendations(temperature))
-        recs.extend(self._water_recommendations(humidity, health_result))
-        recs.extend(self._nutrient_ec_recommendations(ec))
-        recs.extend(self._nutrient_ph_recommendations(ph))
-        recs.extend(self._vpd_recommendations(vpd, temperature, humidity))
-        recs.extend(self._phytophthora_recommendations(temperature, humidity))
-        recs.extend(self._compound_recommendations(temperature, humidity, ec, ph))
+        recs.extend(self._temperature_recommendations(temperature, thresholds))
+        recs.extend(self._water_recommendations(humidity, health_result, thresholds))
+        recs.extend(self._nutrient_ec_recommendations(ec, thresholds))
+        recs.extend(self._nutrient_ph_recommendations(ph, thresholds))
+        recs.extend(self._vpd_recommendations(vpd, temperature, humidity, thresholds))
+        recs.extend(self._phytophthora_recommendations(temperature, humidity, thresholds))
+        recs.extend(self._compound_recommendations(temperature, humidity, ec, ph, thresholds))
 
         # Deduplicate by action key (first occurrence = highest priority)
         seen: set[str] = set()
@@ -123,61 +133,66 @@ class RecommendationEngine:
     # ---------------------------------------------------------------- temperature
 
     @staticmethod
-    def _temperature_recommendations(temperature: float) -> list[Recommendation]:
+    def _temperature_recommendations(temperature: float, thresholds: Optional[ThresholdMap] = None) -> list[Recommendation]:
         recs: list[Recommendation] = []
+        t_bounds = thresholds.get(PARAM_TEMPERATURE, {}) if thresholds else {}
+        crit_hi = t_bounds.get("critical_max") or TEMPERATURE.critical_high
+        warn_hi = t_bounds.get("warn_max") or TEMPERATURE.warn_high
+        crit_lo = t_bounds.get("critical_min") or TEMPERATURE.critical_low
+        warn_lo = t_bounds.get("warn_min") or TEMPERATURE.warn_low
 
-        if temperature >= TEMPERATURE.critical_high:
+        if temperature >= crit_hi:
             recs.append(Recommendation(
                 action="trigger_micro_sprinkler_cooling",
                 priority="critical",
                 reason=(
                     f"Temperature {temperature:.1f} °C exceeds critical threshold "
-                    f"{TEMPERATURE.critical_high:.1f} °C. Activate micro-sprinkler "
+                    f"{crit_hi:.1f} °C. Activate micro-sprinkler "
                     "cooling immediately to prevent heat damage and fruit drop "
                     "(Haifa Guide: >38 °C causes leaf scorch)."
                 ),
                 confidence=_confidence(
-                    temperature, TEMPERATURE.warn_high, TEMPERATURE.critical_high
+                    temperature, warn_hi, crit_hi
                 ),
             ))
-        elif temperature >= TEMPERATURE.warn_high:
+        elif temperature >= warn_hi:
             recs.append(Recommendation(
                 action="trigger_micro_sprinkler_cooling",
                 priority="high",
                 reason=(
                     f"Temperature {temperature:.1f} °C exceeds warning high "
-                    f"{TEMPERATURE.warn_high:.1f} °C. Start micro-sprinkler "
+                    f"{warn_hi:.1f} °C. Start micro-sprinkler "
                     "cooling to prevent heat stress accumulation."
                 ),
                 confidence=_confidence(
-                    temperature, TEMPERATURE.warn_high, TEMPERATURE.critical_high
+                    temperature, warn_hi, crit_hi
                 ),
             ))
 
-        if temperature <= TEMPERATURE.critical_low:
+        if temperature <= crit_lo:
             recs.append(Recommendation(
                 action="apply_frost_protection",
                 priority="critical",
                 reason=(
                     f"Temperature {temperature:.1f} °C is at or below critical low "
-                    f"{TEMPERATURE.critical_low:.1f} °C. Apply frost protection "
+                    f"{crit_lo:.1f} °C. Apply frost protection "
                     "immediately — chilling injury is imminent."
                 ),
                 confidence=_confidence(
-                    temperature, TEMPERATURE.warn_low, TEMPERATURE.critical_low
+                    temperature, warn_lo, crit_lo
                 ),
             ))
-        elif temperature <= TEMPERATURE.warn_low:
+        elif temperature <= warn_lo:
             recs.append(Recommendation(
                 action="apply_frost_protection",
                 priority="high",
                 reason=(
                     f"Temperature {temperature:.1f} °C is at or below warning low "
-                    f"{TEMPERATURE.warn_low:.1f} °C. Prepare cold-protection measures "
+                    f"{warn_lo:.1f} °C. Prepare cold-protection measures "
                     "(research: <22 °C stunts durian growth and delays fruiting)."
                 ),
                 confidence=_confidence(
-                    temperature, TEMPERATURE.warn_low, TEMPERATURE.critical_low
+                    temperature, warn_lo, crit_lo
                 ),
             ))
 
@@ -189,91 +204,100 @@ class RecommendationEngine:
     def _water_recommendations(
         humidity: float,
         health_result: HealthResult | None,
+        thresholds: Optional[ThresholdMap] = None,
     ) -> list[Recommendation]:
         recs: list[Recommendation] = []
         water_stress = health_result.water_stress if health_result else None
+        
+        t_bounds = thresholds.get(PARAM_HUMIDITY, {}) if thresholds else {}
+        crit_hi = t_bounds.get("critical_max") or HUMIDITY.critical_high
+        warn_hi = t_bounds.get("warn_max") or HUMIDITY.warn_high
+        opt_hi = t_bounds.get("optimal_max") or HUMIDITY.optimal_high
+        opt_lo = t_bounds.get("optimal_min") or HUMIDITY.optimal_low
+        warn_lo = t_bounds.get("warn_min") or HUMIDITY.warn_low
+        crit_lo = t_bounds.get("critical_min") or HUMIDITY.critical_low
 
         # Drought conditions
-        if humidity <= HUMIDITY.critical_low:
+        if humidity <= crit_lo:
             recs.append(Recommendation(
                 action="trigger_irrigation",
                 priority="critical",
                 reason=(
                     f"Soil moisture {humidity:.1f} % is at critical low "
-                    f"{HUMIDITY.critical_low:.1f} %. Trigger irrigation immediately "
+                    f"{crit_lo:.1f} %. Trigger irrigation immediately "
                     "— wilting and irreversible root damage imminent "
                     "(research: <20-30 % VWC = severe drought)."
                 ),
                 confidence=_confidence(
-                    humidity, HUMIDITY.warn_low, HUMIDITY.critical_low
+                    humidity, warn_lo, crit_lo
                 ),
             ))
-        elif humidity <= HUMIDITY.warn_low:
+        elif humidity <= warn_lo:
             recs.append(Recommendation(
                 action="trigger_irrigation",
                 priority="high",
                 reason=(
                     f"Soil moisture {humidity:.1f} % is below warning low "
-                    f"{HUMIDITY.warn_low:.1f} %. Trigger irrigation promptly to "
+                    f"{warn_lo:.1f} %. Trigger irrigation promptly to "
                     "relieve drought stress (FAO optimal: 40-60 % VWC)."
                 ),
                 confidence=_confidence(
-                    humidity, HUMIDITY.warn_low, HUMIDITY.critical_low
+                    humidity, warn_lo, crit_lo
                 ),
             ))
-        elif humidity < HUMIDITY.optimal_low:
+        elif humidity < opt_lo:
             recs.append(Recommendation(
                 action="trigger_irrigation",
                 priority="medium",
                 reason=(
                     f"Soil moisture {humidity:.1f} % is below optimal minimum "
-                    f"{HUMIDITY.optimal_low:.1f} % VWC. Schedule a light "
+                    f"{opt_lo:.1f} % VWC. Schedule a light "
                     "irrigation cycle (FAO optimal: 40-60 % VWC)."
                 ),
                 confidence=0.62,
             ))
 
         # Waterlogging conditions
-        if humidity >= HUMIDITY.critical_high:
+        if humidity >= crit_hi:
             recs.append(Recommendation(
                 action="stop_irrigation",
                 priority="critical",
                 reason=(
                     f"Soil moisture {humidity:.1f} % is at critical high "
-                    f"{HUMIDITY.critical_high:.1f} %. Stop all irrigation "
+                    f"{crit_hi:.1f} %. Stop all irrigation "
                     "immediately — root anaerobia and fungal disease risk is severe."
                 ),
                 confidence=_confidence(
-                    humidity, HUMIDITY.warn_high, HUMIDITY.critical_high
+                    humidity, warn_hi, crit_hi
                 ),
             ))
-        elif humidity >= HUMIDITY.warn_high:
+        elif humidity >= warn_hi:
             recs.append(Recommendation(
                 action="stop_irrigation",
                 priority="high",
                 reason=(
                     f"Soil moisture {humidity:.1f} % exceeds warning high "
-                    f"{HUMIDITY.warn_high:.1f} %. Stop irrigation and allow "
+                    f"{warn_hi:.1f} %. Stop irrigation and allow "
                     "drainage before the next watering cycle."
                 ),
                 confidence=_confidence(
-                    humidity, HUMIDITY.warn_high, HUMIDITY.critical_high
+                    humidity, warn_hi, crit_hi
                 ),
             ))
-        elif humidity > HUMIDITY.optimal_high:
+        elif humidity > opt_hi:
             recs.append(Recommendation(
                 action="stop_irrigation",
                 priority="medium",
                 reason=(
                     f"Soil moisture {humidity:.1f} % exceeds optimal maximum "
-                    f"{HUMIDITY.optimal_high:.1f} % VWC. Reduce next irrigation "
+                    f"{opt_hi:.1f} % VWC. Reduce next irrigation "
                     "volume or delay the schedule."
                 ),
                 confidence=0.62,
             ))
 
         # High water_stress compound advisory
-        if water_stress is not None and water_stress >= 75 and humidity < HUMIDITY.optimal_low:
+        if water_stress is not None and water_stress >= 75 and humidity < opt_lo:
             recs.append(Recommendation(
                 action="inspect_irrigation_system",
                 priority="high",
@@ -290,70 +314,77 @@ class RecommendationEngine:
     # ---------------------------------------------------------------- EC
 
     @staticmethod
-    def _nutrient_ec_recommendations(ec: float) -> list[Recommendation]:
+    def _nutrient_ec_recommendations(ec: float, thresholds: Optional[ThresholdMap] = None) -> list[Recommendation]:
         recs: list[Recommendation] = []
+        t_bounds = thresholds.get(PARAM_EC, {}) if thresholds else {}
+        crit_hi = t_bounds.get("critical_max") or EC.critical_high
+        warn_hi = t_bounds.get("warn_max") or EC.warn_high
+        opt_hi = t_bounds.get("optimal_max") or EC.optimal_high
+        opt_lo = t_bounds.get("optimal_min") or EC.optimal_low
+        warn_lo = t_bounds.get("warn_min") or EC.warn_low
+        crit_lo = t_bounds.get("critical_min") or EC.critical_low
 
-        if ec <= EC.critical_low:
+        if ec <= crit_lo:
             recs.append(Recommendation(
                 action="adjust_fertigation_ratio_to_high_pk",
                 priority="critical",
                 reason=(
-                    f"EC {ec:.0f} µS/cm is at critical low {EC.critical_low:.0f} µS/cm. "
+                    f"EC {ec:.0f} µS/cm is at critical low {crit_lo:.0f} µS/cm. "
                     "Apply high-PK fertigation immediately to prevent severe nutrient "
                     "starvation (Tang et al., 2024: balanced NPK critical for yield)."
                 ),
-                confidence=_confidence(ec, EC.warn_low, EC.critical_low),
+                confidence=_confidence(ec, warn_lo, crit_lo),
             ))
-        elif ec <= EC.warn_low:
+        elif ec <= warn_lo:
             recs.append(Recommendation(
                 action="adjust_fertigation_ratio_to_high_pk",
                 priority="high",
                 reason=(
-                    f"EC {ec:.0f} µS/cm is below warning low {EC.warn_low:.0f} µS/cm. "
+                    f"EC {ec:.0f} µS/cm is below warning low {warn_lo:.0f} µS/cm. "
                     "Increase fertigation concentration in the next irrigation cycle."
                 ),
-                confidence=_confidence(ec, EC.warn_low, EC.critical_low),
+                confidence=_confidence(ec, warn_lo, crit_lo),
             ))
-        elif ec < EC.optimal_low:
+        elif ec < opt_lo:
             recs.append(Recommendation(
                 action="adjust_fertigation_ratio_to_high_pk",
                 priority="medium",
                 reason=(
                     f"EC {ec:.0f} µS/cm is below optimal minimum "
-                    f"{EC.optimal_low:.0f} µS/cm. Consider a light fertigation "
+                    f"{opt_lo:.0f} µS/cm. Consider a light fertigation "
                     "boost to restore optimal nutrient levels."
                 ),
                 confidence=0.62,
             ))
 
-        if ec >= EC.critical_high:
+        if ec >= crit_hi:
             recs.append(Recommendation(
                 action="flush_irrigation_to_reduce_ec",
                 priority="critical",
                 reason=(
-                    f"EC {ec:.0f} µS/cm is at critical high {EC.critical_high:.0f} µS/cm. "
+                    f"EC {ec:.0f} µS/cm is at critical high {crit_hi:.0f} µS/cm. "
                     "Flush the root zone with clean water immediately to prevent "
                     "salt toxicity."
                 ),
-                confidence=_confidence(ec, EC.warn_high, EC.critical_high),
+                confidence=_confidence(ec, warn_hi, crit_hi),
             ))
-        elif ec >= EC.warn_high:
+        elif ec >= warn_hi:
             recs.append(Recommendation(
                 action="flush_irrigation_to_reduce_ec",
                 priority="high",
                 reason=(
-                    f"EC {ec:.0f} µS/cm exceeds warning high {EC.warn_high:.0f} µS/cm. "
+                    f"EC {ec:.0f} µS/cm exceeds warning high {warn_hi:.0f} µS/cm. "
                     "Plan a leaching irrigation cycle to reduce salt accumulation."
                 ),
-                confidence=_confidence(ec, EC.warn_high, EC.critical_high),
+                confidence=_confidence(ec, warn_hi, crit_hi),
             ))
-        elif ec > EC.optimal_high:
+        elif ec > opt_hi:
             recs.append(Recommendation(
                 action="flush_irrigation_to_reduce_ec",
                 priority="low",
                 reason=(
                     f"EC {ec:.0f} µS/cm slightly exceeds optimal maximum "
-                    f"{EC.optimal_high:.0f} µS/cm. Monitor and reduce "
+                    f"{opt_hi:.0f} µS/cm. Monitor and reduce "
                     "fertigation concentration at next opportunity."
                 ),
                 confidence=0.62,
@@ -364,72 +395,79 @@ class RecommendationEngine:
     # ---------------------------------------------------------------- pH
 
     @staticmethod
-    def _nutrient_ph_recommendations(ph: float) -> list[Recommendation]:
+    def _nutrient_ph_recommendations(ph: float, thresholds: Optional[ThresholdMap] = None) -> list[Recommendation]:
         """pH recommendations — research basis: optimal 5.5-6.5 (Ngoc et al., 2024)."""
         recs: list[Recommendation] = []
+        t_bounds = thresholds.get(PARAM_PH, {}) if thresholds else {}
+        crit_hi = t_bounds.get("critical_max") or PH.critical_high
+        warn_hi = t_bounds.get("warn_max") or PH.warn_high
+        opt_hi = t_bounds.get("optimal_max") or PH.optimal_high
+        opt_lo = t_bounds.get("optimal_min") or PH.optimal_low
+        warn_lo = t_bounds.get("warn_min") or PH.warn_low
+        crit_lo = t_bounds.get("critical_min") or PH.critical_low
 
-        if ph <= PH.critical_low:
+        if ph <= crit_lo:
             recs.append(Recommendation(
                 action="apply_lime_to_raise_ph",
                 priority="critical",
                 reason=(
-                    f"pH {ph:.2f} is at critical low {PH.critical_low:.1f}. "
+                    f"pH {ph:.2f} is at critical low {crit_lo:.1f}. "
                     "Apply agricultural lime immediately — full Ca/Mg/P lock-out "
                     "is imminent at this acidity level."
                 ),
-                confidence=_confidence(ph, PH.warn_low, PH.critical_low),
+                confidence=_confidence(ph, warn_lo, crit_lo),
             ))
-        elif ph <= PH.warn_low:
+        elif ph <= warn_lo:
             recs.append(Recommendation(
                 action="apply_lime_to_raise_ph",
                 priority="high",
                 reason=(
-                    f"pH {ph:.2f} is below warning low {PH.warn_low:.1f}. "
+                    f"pH {ph:.2f} is below warning low {warn_lo:.1f}. "
                     "Apply lime or dolomite to raise pH and restore P availability "
                     "(durian optimal pH: 5.5-6.5)."
                 ),
-                confidence=_confidence(ph, PH.warn_low, PH.critical_low),
+                confidence=_confidence(ph, warn_lo, crit_lo),
             ))
-        elif ph < PH.optimal_low:
+        elif ph < opt_lo:
             recs.append(Recommendation(
                 action="apply_lime_to_raise_ph",
                 priority="medium",
                 reason=(
-                    f"pH {ph:.2f} is below optimal minimum {PH.optimal_low:.1f}. "
+                    f"pH {ph:.2f} is below optimal minimum {opt_lo:.1f}. "
                     "Schedule a lime application to return pH to optimal range "
                     "(research: durian optimal pH 5.5-6.5)."
                 ),
                 confidence=0.62,
             ))
 
-        if ph >= PH.critical_high:
+        if ph >= crit_hi:
             recs.append(Recommendation(
                 action="apply_sulfur_to_lower_ph",
                 priority="critical",
                 reason=(
-                    f"pH {ph:.2f} is at critical high {PH.critical_high:.1f}. "
+                    f"pH {ph:.2f} is at critical high {crit_hi:.1f}. "
                     "Apply elemental sulfur or acidifying fertiliser urgently — "
                     "Fe/Zn/Mn lock-out is active (research: optimal pH ≤6.5)."
                 ),
-                confidence=_confidence(ph, PH.warn_high, PH.critical_high),
+                confidence=_confidence(ph, warn_hi, crit_hi),
             ))
-        elif ph >= PH.warn_high:
+        elif ph >= warn_hi:
             recs.append(Recommendation(
                 action="apply_sulfur_to_lower_ph",
                 priority="high",
                 reason=(
-                    f"pH {ph:.2f} exceeds warning high {PH.warn_high:.1f}. "
+                    f"pH {ph:.2f} exceeds warning high {warn_hi:.1f}. "
                     "Apply sulfur-based acidifier to lower pH and restore "
                     "micronutrient availability (research: optimal pH ≤6.5)."
                 ),
-                confidence=_confidence(ph, PH.warn_high, PH.critical_high),
+                confidence=_confidence(ph, warn_hi, crit_hi),
             ))
-        elif ph > PH.optimal_high:
+        elif ph > opt_hi:
             recs.append(Recommendation(
                 action="apply_sulfur_to_lower_ph",
                 priority="medium",
                 reason=(
-                    f"pH {ph:.2f} exceeds optimal maximum {PH.optimal_high:.1f}. "
+                    f"pH {ph:.2f} exceeds optimal maximum {opt_hi:.1f}. "
                     "Monitor pH trend; plan acidification if it continues to rise "
                     "(durian optimal pH 5.5-6.5; Ngoc et al., 2024)."
                 ),
@@ -445,6 +483,7 @@ class RecommendationEngine:
         vpd: float,
         temperature: float,
         humidity: float,
+        thresholds: Optional[ThresholdMap] = None,
     ) -> list[Recommendation]:
         """Vapor Pressure Deficit recommendations.
 
@@ -452,29 +491,32 @@ class RecommendationEngine:
         Recommendations target reducing evaporative load through cooling or misting.
         """
         recs: list[Recommendation] = []
+        t_bounds = thresholds.get(PARAM_VPD, {}) if thresholds else {}
+        crit_hi = t_bounds.get("critical_max") or VPD.critical_high
+        warn_hi = t_bounds.get("warn_max") or VPD.warn_high
 
-        if vpd >= VPD.critical_high:
+        if vpd >= crit_hi:
             recs.append(Recommendation(
                 action="trigger_micro_sprinkler_cooling",
                 priority="critical",
                 reason=(
                     f"VPD {vpd:.2f} kPa (T={temperature:.1f} °C, H={humidity:.1f} %) "
-                    f"exceeds critical {VPD.critical_high:.1f} kPa — stomatal closure "
+                    f"exceeds critical {crit_hi:.1f} kPa — stomatal closure "
                     "and severe water stress are occurring even if soil moisture is "
                     "adequate. Activate misting/sprinkler to lower atmospheric demand."
                 ),
-                confidence=_confidence(vpd, VPD.warn_high, VPD.critical_high),
+                confidence=_confidence(vpd, warn_hi, crit_hi),
             ))
-        elif vpd >= VPD.warn_high:
+        elif vpd >= warn_hi:
             recs.append(Recommendation(
                 action="trigger_micro_sprinkler_cooling",
                 priority="high",
                 reason=(
                     f"VPD {vpd:.2f} kPa (T={temperature:.1f} °C, H={humidity:.1f} %) "
-                    f"exceeds warning {VPD.warn_high:.1f} kPa — evaporative demand "
+                    f"exceeds warning {warn_hi:.1f} kPa — evaporative demand "
                     "is high; activate misting to reduce canopy stress."
                 ),
-                confidence=_confidence(vpd, VPD.warn_high, VPD.critical_high),
+                confidence=_confidence(vpd, warn_hi, crit_hi),
             ))
 
         return recs
@@ -485,6 +527,7 @@ class RecommendationEngine:
     def _phytophthora_recommendations(
         temperature: float,
         humidity: float,
+        thresholds: Optional[ThresholdMap] = None,
     ) -> list[Recommendation]:
         """Recommendations for Phytophthora disease risk.
 
@@ -492,21 +535,26 @@ class RecommendationEngine:
         that favour P. palmivora (Guest & Drenth, 2004).
         """
         recs: list[Recommendation] = []
+        t_bounds = thresholds.get(PARAM_PHYTOPHTHORA, {}) if thresholds else {}
+        opt_lo = t_bounds.get("optimal_min") or PHYTOPHTHORA.temp_favour_low
+        opt_hi = t_bounds.get("optimal_max") or PHYTOPHTHORA.temp_favour_high
+        crit_hi = t_bounds.get("critical_max") or PHYTOPHTHORA.moisture_critical
+        warn_hi = t_bounds.get("warn_max") or PHYTOPHTHORA.moisture_warn
 
-        temp_in_range = PHYTOPHTHORA.temp_favour_low <= temperature <= PHYTOPHTHORA.temp_favour_high
+        temp_in_range = opt_lo <= temperature <= opt_hi
 
-        if temp_in_range and humidity >= PHYTOPHTHORA.moisture_critical:
+        if temp_in_range and humidity >= crit_hi:
             conf = _confidence(
                 humidity,
-                PHYTOPHTHORA.moisture_warn,
-                PHYTOPHTHORA.moisture_critical,
+                warn_hi,
+                crit_hi,
             )
             recs.append(Recommendation(
                 action="inspect_for_phytophthora",
                 priority="critical",
                 reason=(
                     f"Critical Phytophthora conditions: T={temperature:.1f} °C and "
-                    f"soil moisture {humidity:.1f} % ≥ {PHYTOPHTHORA.moisture_critical:.0f} %. "
+                    f"soil moisture {humidity:.1f} % ≥ {crit_hi:.0f} %. "
                     "Inspect all trees for root/stem canker. Apply preventive "
                     "phosphonate fungicide (Guest & Drenth, 2004)."
                 ),
@@ -522,11 +570,11 @@ class RecommendationEngine:
                 ),
                 confidence=round(conf * 0.9, 2),
             ))
-        elif temp_in_range and humidity >= PHYTOPHTHORA.moisture_warn:
+        elif temp_in_range and humidity >= warn_hi:
             conf = _confidence(
                 humidity,
-                PHYTOPHTHORA.moisture_warn,
-                PHYTOPHTHORA.moisture_critical,
+                warn_hi,
+                crit_hi,
             )
             recs.append(Recommendation(
                 action="apply_mulch_for_disease_prevention",
@@ -549,20 +597,39 @@ class RecommendationEngine:
         humidity: float,
         ec: float,
         ph: float,
+        thresholds: Optional[ThresholdMap] = None,
     ) -> list[Recommendation]:
         """Multi-variable conditions that require a combined response."""
         recs: list[Recommendation] = []
+        
+        t_bounds_t = thresholds.get(PARAM_TEMPERATURE, {}) if thresholds else {}
+        t_warn_hi = t_bounds_t.get("warn_max") or TEMPERATURE.warn_high
+        t_opt_hi = t_bounds_t.get("optimal_max") or TEMPERATURE.optimal_high
+        t_opt_lo = t_bounds_t.get("optimal_min") or TEMPERATURE.optimal_low
+        
+        t_bounds_h = thresholds.get(PARAM_HUMIDITY, {}) if thresholds else {}
+        h_opt_lo = t_bounds_h.get("optimal_min") or HUMIDITY.optimal_low
+        h_warn_lo = t_bounds_h.get("warn_min") or HUMIDITY.warn_low
+        h_opt_hi = t_bounds_h.get("optimal_max") or HUMIDITY.optimal_high
+        
+        t_bounds_ec = thresholds.get(PARAM_EC, {}) if thresholds else {}
+        ec_opt_lo = t_bounds_ec.get("optimal_min") or EC.optimal_low
+        ec_opt_hi = t_bounds_ec.get("optimal_max") or EC.optimal_high
+        
+        t_bounds_ph = thresholds.get(PARAM_PH, {}) if thresholds else {}
+        ph_opt_lo = t_bounds_ph.get("optimal_min") or PH.optimal_low
+        ph_opt_hi = t_bounds_ph.get("optimal_max") or PH.optimal_high
 
         # Combined heat + drought: nutrient uptake collapses
-        is_hot = temperature >= TEMPERATURE.warn_high
-        is_dry = humidity < HUMIDITY.optimal_low
+        is_hot = temperature >= t_warn_hi
+        is_dry = humidity < h_opt_lo
         if is_hot and is_dry:
             recs.append(Recommendation(
                 action="reduce_fertigation_until_heat_stress_resolved",
                 priority="high",
                 reason=(
                     f"Combined heat ({temperature:.1f} °C) and drought "
-                    f"({humidity:.1f} % < {HUMIDITY.optimal_low:.0f} % VWC). "
+                    f"({humidity:.1f} % < {h_opt_lo:.0f} % VWC). "
                     "Nutrient uptake is severely impaired at high temperature with "
                     "low soil moisture — reduce fertigation concentration to avoid "
                     "EC build-up during stress (research: nutrient uptake needs "
@@ -572,15 +639,15 @@ class RecommendationEngine:
             ))
 
         # Flowering trigger advisory — Eguchi et al. (2024): ~50 days after 15-day dry spell
-        is_dry_for_flowering = humidity < HUMIDITY.warn_low
-        is_cool_enough = temperature <= TEMPERATURE.optimal_high
+        is_dry_for_flowering = humidity < h_warn_lo
+        is_cool_enough = temperature <= t_opt_hi
         if is_dry_for_flowering and is_cool_enough:
             recs.append(Recommendation(
                 action="anticipate_flowering_trigger",
                 priority="low",
                 reason=(
                     f"Dry-spell conditions detected: soil moisture {humidity:.1f} % "
-                    f"< {HUMIDITY.warn_low:.0f} % with T={temperature:.1f} °C. "
+                    f"< {h_warn_lo:.0f} % with T={temperature:.1f} °C. "
                     "If this persists for ~15 days, flowering initiation may begin "
                     "~50 days later (Eguchi et al., 2024). Schedule bud monitoring "
                     "and prepare pre-flowering nutrient program "
@@ -590,10 +657,10 @@ class RecommendationEngine:
             ))
 
         # Optimal conditions — positive reinforcement advisory
-        temp_ok = TEMPERATURE.optimal_low <= temperature <= TEMPERATURE.optimal_high
-        hum_ok = HUMIDITY.optimal_low <= humidity <= HUMIDITY.optimal_high
-        ec_ok = EC.optimal_low <= ec <= EC.optimal_high
-        ph_ok = PH.optimal_low <= ph <= PH.optimal_high
+        temp_ok = t_opt_lo <= temperature <= t_opt_hi
+        hum_ok = h_opt_lo <= humidity <= h_opt_hi
+        ec_ok = ec_opt_lo <= ec <= ec_opt_hi
+        ph_ok = ph_opt_lo <= ph <= ph_opt_hi
         if temp_ok and hum_ok and ec_ok and ph_ok:
             recs.append(Recommendation(
                 action="maintain_current_conditions",

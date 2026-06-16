@@ -14,9 +14,11 @@ class ThresholdRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
         
-    async def get_all_thresholds(self) -> List[DynamicThresholdModel]:
-        """Fetch all dynamic thresholds."""
+    async def get_all_thresholds(self, epoch_id: Optional[int] = None) -> List[DynamicThresholdModel]:
+        """Fetch all dynamic thresholds, optionally filtered by epoch."""
         stmt = select(DynamicThresholdModel)
+        if epoch_id is not None:
+            stmt = stmt.where(DynamicThresholdModel.knowledge_epoch_id == epoch_id)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 

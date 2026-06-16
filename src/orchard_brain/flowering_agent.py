@@ -13,6 +13,8 @@ from __future__ import annotations
 from ._agent_base import AgentAssessment
 from ._thresholds import HUMIDITY, TEMPERATURE
 from .orchard_memory import SensorSnapshot, TrendResult
+from .knowledge.threshold_engine import ThresholdMap, PARAM_TEMPERATURE, PARAM_HUMIDITY
+from typing import Optional
 
 
 class FloweringAgent:
@@ -24,6 +26,7 @@ class FloweringAgent:
         self,
         snapshot: SensorSnapshot,
         trends: list[TrendResult] | None = None,
+        thresholds: Optional[ThresholdMap] = None,
     ) -> AgentAssessment:
         trends = trends or []
         sm = snapshot.soil_moisture
@@ -33,9 +36,18 @@ class FloweringAgent:
         risks: list[dict] = []
         recs: list[dict] = []
 
+        t_bounds_h = thresholds.get(PARAM_HUMIDITY, {}) if thresholds else {}
+        h_warn_lo = t_bounds_h.get("warn_min") or HUMIDITY.warn_low
+        h_opt_hi = t_bounds_h.get("optimal_max") or HUMIDITY.optimal_high
+        h_warn_hi = t_bounds_h.get("warn_max") or HUMIDITY.warn_high
+
+        t_bounds_t = thresholds.get(PARAM_TEMPERATURE, {}) if thresholds else {}
+        t_opt_hi = t_bounds_t.get("optimal_max") or TEMPERATURE.optimal_high
+        t_warn_lo = t_bounds_t.get("warn_min") or TEMPERATURE.warn_low
+
         # ── Prolonged dry spell — flowering trigger window
         prolonged_dry = "prolonged_dry_period" in trend_names
-        current_dry = sm < HUMIDITY.warn_low
+        current_dry = sm < h_warn_lo
 
         if prolonged_dry and current_dry:
             recs.append({
@@ -49,12 +61,12 @@ class FloweringAgent:
                 ),
                 "confidence": 0.78,
             })
-        elif current_dry and T <= TEMPERATURE.optimal_high:
+        elif current_dry and T <= t_opt_hi:
             recs.append({
                 "action": "anticipate_flowering_trigger",
                 "priority": "low",
                 "reason": (
-                    f"Dry-spell conditions: soil moisture {sm:.1f} % < {HUMIDITY.warn_low:.0f} % "
+                    f"Dry-spell conditions: soil moisture {sm:.1f} % < {h_warn_lo:.0f} % "
                     f"at T={T:.1f} °C. If sustained for ~15 days, flowering trigger expected. "
                     "Monitor bud development from week 3 onwards."
                 ),
@@ -62,12 +74,12 @@ class FloweringAgent:
             })
 
         # ── Temperature interference with fruit set
-        if T <= TEMPERATURE.warn_low:
+        if T <= t_warn_lo:
             risks.append({
                 "risk": "cold_stress",
                 "severity": "warning",
                 "message": (
-                    f"Temperature {T:.1f} °C ≤ {TEMPERATURE.warn_low:.0f} °C — below the minimum "
+                    f"Temperature {T:.1f} °C ≤ {t_warn_lo:.0f} °C — below the minimum "
                     "for healthy fruit set in durian (research: <22 °C impairs pollination)."
                 ),
             })
@@ -82,7 +94,7 @@ class FloweringAgent:
             })
 
         # ── Excess moisture suppresses dry-spell trigger
-        if sm >= HUMIDITY.optimal_high and prolonged_dry:
+        if sm >= h_opt_hi and prolonged_dry:
             recs.append({
                 "action": "stop_irrigation",
                 "priority": "medium",
@@ -94,7 +106,7 @@ class FloweringAgent:
             })
 
         # ── High moisture during flowering — fungal risk
-        if sm >= HUMIDITY.warn_high:
+        if sm >= h_warn_hi:
             risks.append({
                 "risk": "waterlogging",
                 "severity": "warning",
