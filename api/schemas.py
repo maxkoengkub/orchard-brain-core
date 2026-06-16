@@ -114,3 +114,16 @@ class DynamicThresholdResponse(BaseResponse):
     evidence_id: Optional[int] = None
     knowledge_epoch_id: Optional[int] = None
     created_at: datetime
+
+class KnowledgeEpochCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+class KnowledgeEpochResponse(BaseResponse):
+    id: int
+    name: str
+    description: Optional[str] = None
+    created_at: datetime
+
+class ActiveEpochUpdate(BaseModel):
+    epoch_id: int

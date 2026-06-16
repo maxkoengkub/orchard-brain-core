@@ -5,6 +5,7 @@ from database.repository import DatabaseRepository
 from database.knowledge_repository import KnowledgeRepository
 from database.evidence_repository import EvidenceRepository
 from database.threshold_repository import ThresholdRepository
+from database.epoch_repository import EpochRepository
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:
@@ -25,3 +26,7 @@ async def get_evidence_repository() -> AsyncGenerator[EvidenceRepository, None]:
 async def get_threshold_repository() -> AsyncGenerator[ThresholdRepository, None]:
     async with AsyncSessionLocal() as session:
         yield ThresholdRepository(session)
+
+async def get_epoch_repository() -> AsyncGenerator[EpochRepository, None]:
+    async with AsyncSessionLocal() as session:
+        yield EpochRepository(session)

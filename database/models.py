@@ -158,7 +158,7 @@ class RiskEvidenceModel(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     risk_id: Mapped[int] = mapped_column(Integer, ForeignKey('risks.id', ondelete='CASCADE'))
     source_id: Mapped[int] = mapped_column(Integer, ForeignKey('knowledge_sources.id', ondelete='CASCADE'))
-    knowledge_epoch_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    knowledge_epoch_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey('knowledge_epochs.id', ondelete='RESTRICT'), nullable=True)
     rule_key: Mapped[str] = mapped_column(String(100))
     rule_version: Mapped[str] = mapped_column(String(50))
     confidence_weight: Mapped[float] = mapped_column(Float)
@@ -171,7 +171,7 @@ class RecommendationEvidenceModel(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     recommendation_id: Mapped[int] = mapped_column(Integer, ForeignKey('recommendations.id', ondelete='CASCADE'))
     source_id: Mapped[int] = mapped_column(Integer, ForeignKey('knowledge_sources.id', ondelete='CASCADE'))
-    knowledge_epoch_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    knowledge_epoch_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey('knowledge_epochs.id', ondelete='RESTRICT'), nullable=True)
     rule_key: Mapped[str] = mapped_column(String(100))
     rule_version: Mapped[str] = mapped_column(String(50))
     confidence_weight: Mapped[float] = mapped_column(Float)
@@ -192,5 +192,20 @@ class DynamicThresholdModel(Base):
     confidence_score: Mapped[float] = mapped_column(Float, nullable=False)
     source_id: Mapped[int] = mapped_column(Integer, ForeignKey('knowledge_sources.id', ondelete='CASCADE'), nullable=False)
     evidence_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    knowledge_epoch_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    knowledge_epoch_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey('knowledge_epochs.id', ondelete='RESTRICT'), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
+
+class KnowledgeEpochModel(Base):
+    __tablename__ = 'knowledge_epochs'
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
+
+class ActiveEpochPointerModel(Base):
+    __tablename__ = 'active_epoch_pointer'
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    epoch_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey('knowledge_epochs.id', ondelete='RESTRICT'), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now(), onupdate=func.now())

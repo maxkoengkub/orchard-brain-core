@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routers import sensors, intelligence, nodes, control, knowledge, evidence, thresholds
-from database.config import FF_KNOWLEDGE_UI, FF_EVIDENCE_ENGINE, USE_DYNAMIC_THRESHOLDS
+from api.routers import sensors, intelligence, nodes, control, knowledge, evidence, thresholds, epochs
+from database.config import FF_KNOWLEDGE_UI, FF_EVIDENCE_ENGINE, USE_DYNAMIC_THRESHOLDS, FF_EPOCH_MANAGEMENT
 
 app = FastAPI(
     title="Orchard Brain API",
@@ -36,3 +36,6 @@ if FF_EVIDENCE_ENGINE:
 
 if USE_DYNAMIC_THRESHOLDS:
     app.include_router(thresholds.router)
+
+if FF_EPOCH_MANAGEMENT:
+    app.include_router(epochs.router)
