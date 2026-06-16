@@ -1,5 +1,5 @@
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import Integer, Float, String, DateTime, ForeignKeyConstraint, Boolean, JSON, Enum as SQLAlchemyEnum
+from sqlalchemy import Integer, Float, String, DateTime, ForeignKeyConstraint, ForeignKey, Boolean, JSON, Enum as SQLAlchemyEnum
 from sqlalchemy.sql import func
 from datetime import datetime
 from typing import Optional
@@ -151,3 +151,29 @@ class SystemEventModel(Base):
     event_type: Mapped[str] = mapped_column(String(100))
     message: Mapped[str] = mapped_column(String(1024))
     metadata_json: Mapped[dict] = mapped_column(JSON, nullable=True)
+
+class RiskEvidenceModel(Base):
+    __tablename__ = 'risk_evidence'
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    risk_id: Mapped[int] = mapped_column(Integer, ForeignKey('risks.id', ondelete='CASCADE'))
+    source_id: Mapped[int] = mapped_column(Integer, ForeignKey('knowledge_sources.id', ondelete='CASCADE'))
+    knowledge_epoch_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    rule_key: Mapped[str] = mapped_column(String(100))
+    rule_version: Mapped[str] = mapped_column(String(50))
+    confidence_weight: Mapped[float] = mapped_column(Float)
+    context_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
+
+class RecommendationEvidenceModel(Base):
+    __tablename__ = 'recommendation_evidence'
+    
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    recommendation_id: Mapped[int] = mapped_column(Integer, ForeignKey('recommendations.id', ondelete='CASCADE'))
+    source_id: Mapped[int] = mapped_column(Integer, ForeignKey('knowledge_sources.id', ondelete='CASCADE'))
+    knowledge_epoch_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    rule_key: Mapped[str] = mapped_column(String(100))
+    rule_version: Mapped[str] = mapped_column(String(50))
+    confidence_weight: Mapped[float] = mapped_column(Float)
+    context_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())

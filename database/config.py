@@ -11,6 +11,7 @@ DATABASE_URL = os.environ.get(
 SYNC_DATABASE_URL = DATABASE_URL.replace("+asyncpg", "")
 
 FF_KNOWLEDGE_UI = os.environ.get("FF_KNOWLEDGE_UI", "false").lower() == "true"
+FF_EVIDENCE_ENGINE = os.environ.get("FF_EVIDENCE_ENGINE", "false").lower() == "true"
 
 # Async Engine for FastAPI/Gateway
 async_engine = create_async_engine(DATABASE_URL, echo=False)

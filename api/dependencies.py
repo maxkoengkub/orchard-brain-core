@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database.config import AsyncSessionLocal
 from database.repository import DatabaseRepository
 from database.knowledge_repository import KnowledgeRepository
+from database.evidence_repository import EvidenceRepository
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionLocal() as session:
@@ -15,3 +16,7 @@ async def get_repository() -> AsyncGenerator[DatabaseRepository, None]:
 async def get_knowledge_repository() -> AsyncGenerator[KnowledgeRepository, None]:
     async with AsyncSessionLocal() as session:
         yield KnowledgeRepository(session)
+
+async def get_evidence_repository() -> AsyncGenerator[EvidenceRepository, None]:
+    async with AsyncSessionLocal() as session:
+        yield EvidenceRepository(session)

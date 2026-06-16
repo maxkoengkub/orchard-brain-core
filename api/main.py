@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routers import sensors, intelligence, nodes, control, knowledge
-from database.config import FF_KNOWLEDGE_UI
+from api.routers import sensors, intelligence, nodes, control, knowledge, evidence
+from database.config import FF_KNOWLEDGE_UI, FF_EVIDENCE_ENGINE
 
 app = FastAPI(
     title="Orchard Brain API",
@@ -30,3 +30,6 @@ app.include_router(control.router)
 
 if FF_KNOWLEDGE_UI:
     app.include_router(knowledge.router)
+
+if FF_EVIDENCE_ENGINE:
+    app.include_router(evidence.router)

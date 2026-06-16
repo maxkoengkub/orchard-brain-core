@@ -81,3 +81,21 @@ class KnowledgeSourceResponse(KnowledgeSourceBase, BaseResponse):
     id: int
     created_at: datetime
     updated_at: datetime
+
+class EvidenceBase(BaseModel):
+    source_id: int
+    knowledge_epoch_id: Optional[int] = None
+    rule_key: str
+    rule_version: str
+    confidence_weight: float
+    context_json: Optional[Dict[str, Any]] = None
+
+class RiskEvidenceResponse(EvidenceBase, BaseResponse):
+    id: int
+    risk_id: int
+    created_at: datetime
+
+class RecommendationEvidenceResponse(EvidenceBase, BaseResponse):
+    id: int
+    recommendation_id: int
+    created_at: datetime
