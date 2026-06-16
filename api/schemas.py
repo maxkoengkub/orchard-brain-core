@@ -99,3 +99,18 @@ class RecommendationEvidenceResponse(EvidenceBase, BaseResponse):
     id: int
     recommendation_id: int
     created_at: datetime
+
+class DynamicThresholdResponse(BaseResponse):
+    threshold_id: int
+    parameter_name: str
+    optimal_min: Optional[float] = None
+    optimal_max: Optional[float] = None
+    warn_min: Optional[float] = None
+    warn_max: Optional[float] = None
+    critical_min: Optional[float] = None
+    critical_max: Optional[float] = None
+    confidence_score: float
+    source_id: int
+    evidence_id: Optional[int] = None
+    knowledge_epoch_id: Optional[int] = None
+    created_at: datetime

@@ -177,3 +177,20 @@ class RecommendationEvidenceModel(Base):
     confidence_weight: Mapped[float] = mapped_column(Float)
     context_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
+
+class DynamicThresholdModel(Base):
+    __tablename__ = 'dynamic_thresholds'
+    
+    threshold_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    parameter_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    optimal_min: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    optimal_max: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    warn_min: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    warn_max: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    critical_min: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    critical_max: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    confidence_score: Mapped[float] = mapped_column(Float, nullable=False)
+    source_id: Mapped[int] = mapped_column(Integer, ForeignKey('knowledge_sources.id', ondelete='CASCADE'), nullable=False)
+    evidence_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    knowledge_epoch_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=func.now())
